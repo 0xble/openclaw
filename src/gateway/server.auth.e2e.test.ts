@@ -948,6 +948,66 @@ describe("gateway server auth/connect", () => {
     restoreGatewayToken(prevToken);
   });
 
+  test("allows legacy paired devices without role/scope metadata", async () => {
+    const { resolvePairingPaths, readJsonFile } = await import("../infra/pairing-files.js");
+    const { writeJsonAtomic } = await import("../infra/json-files.js");
+    const { getPairedDevice } = await import("../infra/device-pairing.js");
+    const {
+      device,
+      identity: { deviceId },
+    } = await createSignedDevice({
+      token: "secret",
+      scopes: ["operator.read"],
+      clientId: TEST_OPERATOR_CLIENT.id,
+      clientMode: TEST_OPERATOR_CLIENT.mode,
+    });
+    const { server, ws, port, prevToken } = await startServerWithClient("secret");
+    let ws2: WebSocket | undefined;
+    try {
+      const initial = await connectReq(ws, {
+        token: "secret",
+        scopes: ["operator.read"],
+        client: TEST_OPERATOR_CLIENT,
+        device,
+      });
+      if (!initial.ok) {
+        await approvePendingPairingIfNeeded();
+      }
+
+      const { pairedPath } = resolvePairingPaths(undefined, "devices");
+      const paired =
+        (await readJsonFile<Record<string, { roles?: string[]; scopes?: string[] }>>(pairedPath)) ??
+        {};
+      const legacy = paired[deviceId];
+      expect(legacy).toBeDefined();
+      expect(legacy?.roles).toBeUndefined();
+      expect(legacy?.scopes).toBeUndefined();
+      delete legacy.roles;
+      delete legacy.scopes;
+      await writeJsonAtomic(pairedPath, paired);
+      ws.close();
+
+      ws2 = new WebSocket(`ws://127.0.0.1:${port}`);
+      await new Promise<void>((resolve) => ws2.once("open", resolve));
+      const upgraded = await connectReq(ws2, {
+        token: "secret",
+        scopes: ["operator.admin"],
+        client: TEST_OPERATOR_CLIENT,
+        device,
+      });
+      expect(upgraded.ok).toBe(true);
+
+      const refreshed = await getPairedDevice(deviceId);
+      expect(refreshed?.roles).toContain("operator");
+      expect(refreshed?.scopes).toContain("operator.admin");
+    } finally {
+      await server.close();
+      restoreGatewayToken(prevToken);
+      ws.close();
+      ws2?.close();
+    }
+  });
+
   test("rejects revoked device token", async () => {
     const { revokeDeviceToken } = await import("../infra/device-pairing.js");
     const { server, ws, port, prevToken } = await startServerWithClient("secret");
