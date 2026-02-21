@@ -390,8 +390,11 @@ describe("hooks mapping", () => {
         path: "gmail",
       });
       expect(result?.ok).toBe(true);
-      if (result?.ok && result.action && result.action.kind === "agent") {
-        expect(result.action.message).toBe("value: ");
+      if (result?.ok) {
+        const action = result.action;
+        if (action?.kind === "agent") {
+          expect(action.message).toBe("value: ");
+        }
       }
     });
 
@@ -411,8 +414,11 @@ describe("hooks mapping", () => {
         path: "gmail",
       });
       expect(result?.ok).toBe(true);
-      if (result?.ok && result.action && result.action.kind === "agent") {
-        expect(result.action.message).toBe("type: ");
+      if (result?.ok) {
+        const action = result.action;
+        if (action?.kind === "agent") {
+          expect(action.message).toBe("type: ");
+        }
       }
     });
 
@@ -432,8 +438,11 @@ describe("hooks mapping", () => {
         path: "gmail",
       });
       expect(result?.ok).toBe(true);
-      if (result?.ok && result.action && result.action.kind === "agent") {
-        expect(result.action.message).toBe("val: ");
+      if (result?.ok) {
+        const action = result.action;
+        if (action?.kind === "agent") {
+          expect(action.message).toBe("val: ");
+        }
       }
     });
   });
