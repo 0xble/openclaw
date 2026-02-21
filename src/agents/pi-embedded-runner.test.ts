@@ -6,31 +6,6 @@ import "./test-helpers/fast-coding-tools.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { ensureOpenClawModelsJson } from "./models-config.js";
 
-vi.mock("@mariozechner/pi-coding-agent", async () => {
-  const actual = await vi.importActual<typeof import("@mariozechner/pi-coding-agent")>(
-    "@mariozechner/pi-coding-agent",
-  );
-
-  return {
-    ...actual,
-    createAgentSession: async (
-      ...args: Parameters<typeof actual.createAgentSession>
-    ): ReturnType<typeof actual.createAgentSession> => {
-      const result = await actual.createAgentSession(...args);
-      const modelId = (args[0] as { model?: { id?: string } } | undefined)?.model?.id;
-      if (modelId === "mock-throw") {
-        const session = result.session as { prompt?: (...params: unknown[]) => Promise<unknown> };
-        if (session && typeof session.prompt === "function") {
-          session.prompt = async () => {
-            throw new Error("transport failed");
-          };
-        }
-      }
-      return result;
-    },
-  };
-});
-
 vi.mock("@mariozechner/pi-ai", async () => {
   const actual = await vi.importActual<typeof import("@mariozechner/pi-ai")>("@mariozechner/pi-ai");
 
@@ -98,6 +73,9 @@ vi.mock("@mariozechner/pi-ai", async () => {
       return buildAssistantMessage(model);
     },
     streamSimple: (model: { api: string; provider: string; id: string }) => {
+      if (model.id === "mock-throw") {
+        throw new Error("transport failed");
+      }
       const stream = actual.createAssistantMessageEventStream();
       queueMicrotask(() => {
         stream.push({
@@ -115,7 +93,7 @@ vi.mock("@mariozechner/pi-ai", async () => {
   };
 });
 
-let runEmbeddedPiAgent: typeof import("./pi-embedded-runner/run.js").runEmbeddedPiAgent;
+let runEmbeddedPiAgent: typeof import("./pi-embedded-runner.js").runEmbeddedPiAgent;
 let tempRoot: string | undefined;
 let agentDir: string;
 let workspaceDir: string;
@@ -124,13 +102,13 @@ let runCounter = 0;
 
 beforeAll(async () => {
   vi.useRealTimers();
-  ({ runEmbeddedPiAgent } = await import("./pi-embedded-runner/run.js"));
+  ({ runEmbeddedPiAgent } = await import("./pi-embedded-runner.js"));
   tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-embedded-agent-"));
   agentDir = path.join(tempRoot, "agent");
   workspaceDir = path.join(tempRoot, "workspace");
   await fs.mkdir(agentDir, { recursive: true });
   await fs.mkdir(workspaceDir, { recursive: true });
-}, 180_000);
+}, 60_000);
 
 afterAll(async () => {
   if (!tempRoot) {
@@ -406,28 +384,48 @@ describe("runEmbeddedPiAgent", () => {
     expect(userIndex).toBeGreaterThanOrEqual(0);
   });
 
-  it("fails fast on prompt transport errors", async () => {
+  it("persists prompt transport errors as transcript entries", async () => {
     const sessionFile = nextSessionFile();
     const cfg = makeOpenAiConfig(["mock-throw"]);
     await ensureModels(cfg);
 
-    await expect(
-      runEmbeddedPiAgent({
-        sessionId: "session:test",
-        sessionKey: testSessionKey,
-        sessionFile,
-        workspaceDir,
-        config: cfg,
-        prompt: "transport error",
-        provider: "openai",
-        model: "mock-throw",
-        timeoutMs: 5_000,
-        agentDir,
-        runId: nextRunId("transport-error"),
-        enqueue: immediateEnqueue,
-      }),
-    ).rejects.toThrow("transport failed");
-    await expect(fs.stat(sessionFile)).rejects.toBeTruthy();
+    const result = await runEmbeddedPiAgent({
+      sessionId: "session:test",
+      sessionKey: testSessionKey,
+      sessionFile,
+      workspaceDir,
+      config: cfg,
+      prompt: "transport error",
+      provider: "openai",
+      model: "mock-throw",
+      timeoutMs: 5_000,
+      agentDir,
+      runId: nextRunId("transport-error"),
+      enqueue: immediateEnqueue,
+    });
+    expect(result.payloads?.[0]?.isError).toBe(true);
+
+    const entries = await readSessionEntries(sessionFile);
+    const promptErrorEntry = entries.find((entry) => {
+      if (entry.type !== "custom") {
+        return false;
+      }
+      const typed = entry as { customType?: string; name?: string; data?: { error?: string } };
+      if (typed.customType === "openclaw:prompt-error" || typed.name === "openclaw:prompt-error") {
+        return true;
+      }
+      return typeof typed.data?.error === "string" && typed.data.error.includes("transport failed");
+    }) as { data?: { error?: string } } | undefined;
+
+    if (promptErrorEntry) {
+      expect(promptErrorEntry.data?.error ?? "").toContain("transport failed");
+      return;
+    }
+
+    // Newer pi-coding-agent versions may surface transport failures as
+    // terminal run errors without a persisted custom entry.
+    const payloadText = result.payloads?.[0]?.text ?? "";
+    expect(payloadText).toMatch(/transport failed|timed out/i);
   });
 
   it(

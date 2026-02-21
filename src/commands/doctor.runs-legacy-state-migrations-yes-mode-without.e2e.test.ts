@@ -1,24 +1,17 @@
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   arrangeLegacyStateMigrationTest,
   confirm,
   createDoctorRuntime,
   ensureAuthProfileStore,
+  healthCommand,
   mockDoctorConfigSnapshot,
   serviceIsLoaded,
   serviceRestart,
   writeConfigFile,
 } from "./doctor.e2e-harness.js";
 
-let doctorCommand: typeof import("./doctor.js").doctorCommand;
-let healthCommand: typeof import("./health.js").healthCommand;
-
 describe("doctor command", () => {
-  beforeAll(async () => {
-    ({ doctorCommand } = await import("./doctor.js"));
-    ({ healthCommand } = await import("./health.js"));
-  });
-
   it("runs legacy state migrations in yes mode without prompting", async () => {
     const { doctorCommand, runtime, runLegacyStateMigrations } =
       await arrangeLegacyStateMigrationTest();
@@ -48,12 +41,13 @@ describe("doctor command", () => {
   it("skips gateway restarts in non-interactive mode", async () => {
     mockDoctorConfigSnapshot();
 
-    vi.mocked(healthCommand).mockRejectedValueOnce(new Error("gateway closed"));
+    healthCommand.mockRejectedValueOnce(new Error("gateway closed"));
 
     serviceIsLoaded.mockResolvedValueOnce(true);
     serviceRestart.mockClear();
     confirm.mockClear();
 
+    const { doctorCommand } = await import("./doctor.js");
     await doctorCommand(createDoctorRuntime(), { nonInteractive: true });
 
     expect(serviceRestart).not.toHaveBeenCalled();
@@ -85,6 +79,7 @@ describe("doctor command", () => {
       },
     });
 
+    const { doctorCommand } = await import("./doctor.js");
     await doctorCommand(createDoctorRuntime(), { yes: true });
 
     const written = writeConfigFile.mock.calls.at(-1)?.[0] as Record<string, unknown>;

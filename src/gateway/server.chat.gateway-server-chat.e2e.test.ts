@@ -100,9 +100,9 @@ describe("gateway server chat", () => {
 
       const spy = vi.mocked(getReplyFromConfig);
       spy.mockClear();
-      const spyCalls = spy.mock.calls as unknown[][];
+      const getSpyCalls = () => spy.mock.calls as unknown[][];
       testState.agentConfig = { timeoutSeconds: 123 };
-      const callsBeforeTimeout = spyCalls.length;
+      const callsBeforeTimeout = getSpyCalls().length;
       const timeoutRes = await rpcReq(ws, "chat.send", {
         sessionKey: "main",
         message: "hello",
@@ -110,18 +110,23 @@ describe("gateway server chat", () => {
       });
       expect(timeoutRes.ok).toBe(true);
 
-      await waitFor(() => spyCalls.length > callsBeforeTimeout);
-      const timeoutCall = spyCalls.at(-1)?.[1] as { runId?: string } | undefined;
+      await waitFor(() => getSpyCalls().length > callsBeforeTimeout);
+      const timeoutCall = getSpyCalls().at(-1)?.[1] as { runId?: string } | undefined;
       expect(timeoutCall?.runId).toBe("idem-timeout-1");
       testState.agentConfig = undefined;
 
+      spy.mockClear();
+      const callsBeforeSession = getSpyCalls().length;
       const sessionRes = await rpcReq(ws, "chat.send", {
         sessionKey: "agent:main:subagent:abc",
         message: "hello",
         idempotencyKey: "idem-session-key-1",
       });
       expect(sessionRes.ok).toBe(true);
-      expect(sessionRes.payload?.runId).toBe("idem-session-key-1");
+
+      await waitFor(() => getSpyCalls().length > callsBeforeSession);
+      const sessionCall = getSpyCalls().at(-1)?.[0] as { SessionKey?: string } | undefined;
+      expect(sessionCall?.SessionKey).toBe("agent:main:subagent:abc");
 
       const sendPolicyDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gw-"));
       tempDirs.push(sendPolicyDir);
@@ -194,6 +199,8 @@ describe("gateway server chat", () => {
       testState.sessionStorePath = undefined;
       testState.sessionConfig = undefined;
 
+      spy.mockClear();
+      const callsBeforeImage = getSpyCalls().length;
       const pngB64 =
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/woAAn8B9FD5fHAAAAAASUVORK5CYII=";
 
@@ -222,6 +229,14 @@ describe("gateway server chat", () => {
       const imgRes = await onceMessage(ws, (o) => o.type === "res" && o.id === reqId, 8000);
       expect(imgRes.ok).toBe(true);
       expect(imgRes.payload?.runId).toBeDefined();
+
+      await waitFor(() => getSpyCalls().length > callsBeforeImage, 8000);
+      const imgOpts = getSpyCalls().at(-1)?.[1] as
+        | { images?: Array<{ type: string; data: string; mimeType: string }> }
+        | undefined;
+      expect(imgOpts?.images).toEqual([{ type: "image", data: pngB64, mimeType: "image/png" }]);
+
+      const callsBeforeImageOnly = getSpyCalls().length;
       const reqIdOnly = "chat-img-only";
       ws.send(
         JSON.stringify({
@@ -247,6 +262,12 @@ describe("gateway server chat", () => {
       const imgOnlyRes = await onceMessage(ws, (o) => o.type === "res" && o.id === reqIdOnly, 8000);
       expect(imgOnlyRes.ok).toBe(true);
       expect(imgOnlyRes.payload?.runId).toBeDefined();
+
+      await waitFor(() => getSpyCalls().length > callsBeforeImageOnly, 8000);
+      const imgOnlyOpts = getSpyCalls().at(-1)?.[1] as
+        | { images?: Array<{ type: string; data: string; mimeType: string }> }
+        | undefined;
+      expect(imgOnlyOpts?.images).toEqual([{ type: "image", data: pngB64, mimeType: "image/png" }]);
 
       const historyDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-gw-"));
       tempDirs.push(historyDir);
@@ -457,6 +478,7 @@ describe("gateway server chat", () => {
 
         const res = await waitP;
         expect(res.ok).toBe(true);
+        // Lifecycle errors are deferred by a grace window to allow retry starts.
         expect(res.payload?.status).toBe("timeout");
       }
 

@@ -1,7 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 import "./test-helpers/fast-coding-tools.js";
 import { createOpenClawCodingTools } from "./pi-tools.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
+vi.mock("./channel-tools.js", async () => {
+  const actual = await vi.importActual<typeof import("./channel-tools.js")>("./channel-tools.js");
+  return {
+    ...actual,
+    listChannelAgentTools: () => [],
+  };
+});
 
 const defaultTools = createOpenClawCodingTools({ senderIsOwner: true });
 

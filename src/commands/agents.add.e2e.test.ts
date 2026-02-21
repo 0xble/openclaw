@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { baseConfigSnapshot, createTestRuntime } from "./test-runtime-config-helpers.js";
 
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 const readConfigFileSnapshotMock = vi.hoisted(() => vi.fn());
 const writeConfigFileMock = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 

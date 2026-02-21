@@ -1,45 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   connectOk,
+  connectReq,
   installGatewayTestHooks,
-  readConnectChallengeNonce,
   rpcReq,
+  startServerWithClient,
 } from "./test-helpers.js";
 import { withServer } from "./test-with-server.js";
 
 installGatewayTestHooks({ scope: "suite" });
-
-async function createFreshOperatorDevice(scopes: string[], nonce: string) {
-  const { randomUUID } = await import("node:crypto");
-  const { tmpdir } = await import("node:os");
-  const { join } = await import("node:path");
-  const { buildDeviceAuthPayload } = await import("./device-auth.js");
-  const { loadOrCreateDeviceIdentity, publicKeyRawBase64UrlFromPem, signDevicePayload } =
-    await import("../infra/device-identity.js");
-
-  const identity = loadOrCreateDeviceIdentity(
-    join(tmpdir(), `openclaw-talk-config-${randomUUID()}.json`),
-  );
-  const signedAtMs = Date.now();
-  const payload = buildDeviceAuthPayload({
-    deviceId: identity.deviceId,
-    clientId: "test",
-    clientMode: "test",
-    role: "operator",
-    scopes,
-    signedAtMs,
-    token: "secret",
-    nonce,
-  });
-
-  return {
-    id: identity.deviceId,
-    publicKey: publicKeyRawBase64UrlFromPem(identity.publicKeyPem),
-    signature: signDevicePayload(identity.privateKeyPem, payload),
-    signedAt: signedAtMs,
-    nonce,
-  };
-}
 
 describe("gateway talk.config", () => {
   it("returns redacted talk config for read scope", async () => {
@@ -58,13 +27,7 @@ describe("gateway talk.config", () => {
     });
 
     await withServer(async (ws) => {
-      const nonce = await readConnectChallengeNonce(ws);
-      expect(nonce).toBeTruthy();
-      await connectOk(ws, {
-        token: "secret",
-        scopes: ["operator.read"],
-        device: await createFreshOperatorDevice(["operator.read"], String(nonce)),
-      });
+      await connectOk(ws, { token: "secret", scopes: ["operator.read"] });
       const res = await rpcReq<{ config?: { talk?: { apiKey?: string; voiceId?: string } } }>(
         ws,
         "talk.config",
@@ -85,13 +48,7 @@ describe("gateway talk.config", () => {
     });
 
     await withServer(async (ws) => {
-      const nonce = await readConnectChallengeNonce(ws);
-      expect(nonce).toBeTruthy();
-      await connectOk(ws, {
-        token: "secret",
-        scopes: ["operator.read"],
-        device: await createFreshOperatorDevice(["operator.read"], String(nonce)),
-      });
+      await connectOk(ws, { token: "secret", scopes: ["operator.read"] });
       const res = await rpcReq(ws, "talk.config", { includeSecrets: true });
       expect(res.ok).toBe(false);
       expect(res.error?.message).toContain("missing scope: operator.talk.secrets");
@@ -100,28 +57,57 @@ describe("gateway talk.config", () => {
 
   it("returns secrets for operator.talk.secrets scope", async () => {
     const { writeConfigFile } = await import("../config/config.js");
+    const { listDevicePairing, approveDevicePairing } = await import("../infra/device-pairing.js");
+    const { WebSocket } = await import("ws");
     await writeConfigFile({
       talk: {
         apiKey: "secret-key-abc",
       },
     });
 
-    await withServer(async (ws) => {
-      const nonce = await readConnectChallengeNonce(ws);
-      expect(nonce).toBeTruthy();
-      await connectOk(ws, {
+    const started = await startServerWithClient("secret");
+    const ws = started.ws;
+    let ws2: InstanceType<typeof WebSocket> | undefined;
+    try {
+      const first = await connectReq(ws, {
         token: "secret",
         scopes: ["operator.read", "operator.write", "operator.talk.secrets"],
-        device: await createFreshOperatorDevice(
-          ["operator.read", "operator.write", "operator.talk.secrets"],
-          String(nonce),
-        ),
       });
-      const res = await rpcReq<{ config?: { talk?: { apiKey?: string } } }>(ws, "talk.config", {
-        includeSecrets: true,
+      if (!first.ok) {
+        expect(first.error?.message ?? "").toContain("pairing required");
+        const pending = await listDevicePairing();
+        const request = pending.pending.find((entry) =>
+          (entry.scopes ?? []).includes("operator.talk.secrets"),
+        );
+        expect(request).toBeTruthy();
+        if (!request) {
+          throw new Error("expected pending pairing request for operator.talk.secrets");
+        }
+        await approveDevicePairing(request.requestId);
+      }
+
+      ws.close();
+      const ws2Socket = new WebSocket(`ws://127.0.0.1:${started.port}`);
+      ws2 = ws2Socket;
+      await new Promise<void>((resolve) => ws2Socket.once("open", resolve));
+      await connectOk(ws2Socket, {
+        token: "secret",
+        scopes: ["operator.read", "operator.write", "operator.talk.secrets"],
       });
+      const res = await rpcReq<{ config?: { talk?: { apiKey?: string } } }>(
+        ws2Socket,
+        "talk.config",
+        {
+          includeSecrets: true,
+        },
+      );
       expect(res.ok).toBe(true);
       expect(res.payload?.config?.talk?.apiKey).toBe("secret-key-abc");
-    });
+    } finally {
+      ws2?.close();
+      ws.close();
+      await started.server.close();
+      started.envSnapshot.restore();
+    }
   });
 });

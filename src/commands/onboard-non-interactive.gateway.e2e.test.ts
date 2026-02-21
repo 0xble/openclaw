@@ -11,6 +11,10 @@ import {
   runNonInteractiveOnboarding,
 } from "./onboard-non-interactive.test-helpers.js";
 
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 const gatewayClientCalls: Array<{
   url?: string;
   token?: string;

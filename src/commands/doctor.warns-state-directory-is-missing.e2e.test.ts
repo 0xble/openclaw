@@ -1,16 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeAll, describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { stripAnsi } from "../terminal/ansi.js";
 import { createDoctorRuntime, mockDoctorConfigSnapshot, note } from "./doctor.e2e-harness.js";
 
-let doctorCommand: typeof import("./doctor.js").doctorCommand;
+vi.hoisted(() => {
+  vi.resetModules();
+});
 
 describe("doctor command", () => {
-  beforeAll(async () => {
-    ({ doctorCommand } = await import("./doctor.js"));
-  });
-
   it("warns when the state directory is missing", async () => {
     mockDoctorConfigSnapshot();
 
@@ -19,12 +18,16 @@ describe("doctor command", () => {
     process.env.OPENCLAW_STATE_DIR = missingDir;
     note.mockClear();
 
+    const { doctorCommand } = await import("./doctor.js");
     await doctorCommand(createDoctorRuntime(), {
       nonInteractive: true,
       workspaceSuggestions: false,
     });
 
-    const stateNote = note.mock.calls.find((call) => call[1] === "State integrity");
+    const stateNote = note.mock.calls.find((call) => {
+      const title = typeof call[1] === "string" ? stripAnsi(call[1]) : "";
+      return title === "State integrity";
+    });
     expect(stateNote).toBeTruthy();
     expect(String(stateNote?.[0])).toContain("CRITICAL");
   }, 30_000);
@@ -43,6 +46,7 @@ describe("doctor command", () => {
       },
     });
 
+    const { doctorCommand } = await import("./doctor.js");
     await doctorCommand(createDoctorRuntime(), {
       nonInteractive: true,
       workspaceSuggestions: false,
@@ -50,7 +54,8 @@ describe("doctor command", () => {
 
     const warned = note.mock.calls.some(
       ([message, title]) =>
-        title === "OpenCode Zen" && String(message).includes("models.providers.opencode"),
+        (typeof title === "string" ? stripAnsi(title) : "") === "OpenCode Zen" &&
+        String(message).includes("models.providers.opencode"),
     );
     expect(warned).toBe(true);
   });
@@ -67,6 +72,7 @@ describe("doctor command", () => {
     note.mockClear();
 
     try {
+      const { doctorCommand } = await import("./doctor.js");
       await doctorCommand(createDoctorRuntime(), {
         nonInteractive: true,
         workspaceSuggestions: false,

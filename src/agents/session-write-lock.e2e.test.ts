@@ -110,7 +110,7 @@ describe("acquireSessionWriteLock", () => {
 
   it("derives max hold from timeout plus grace", () => {
     expect(resolveSessionLockMaxHoldFromTimeout({ timeoutMs: 600_000 })).toBe(720_000);
-    expect(resolveSessionLockMaxHoldFromTimeout({ timeoutMs: 1_000, minMs: 5_000 })).toBe(123_000);
+    expect(resolveSessionLockMaxHoldFromTimeout({ timeoutMs: 1_000, minMs: 5_000 })).toBe(121_000);
   });
 
   it("clamps max hold for effectively no-timeout runs", () => {

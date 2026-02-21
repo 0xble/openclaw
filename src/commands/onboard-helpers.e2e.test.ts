@@ -1,11 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  normalizeGatewayTokenInput,
-  openUrl,
-  resolveBrowserOpenCommand,
-  resolveControlUiLinks,
-  validateGatewayPasswordInput,
-} from "./onboard-helpers.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
+const loadOnboardHelpers = async () => await import("./onboard-helpers.js");
 
 const mocks = vi.hoisted(() => ({
   runCommandWithTimeout: vi.fn<
@@ -31,6 +30,19 @@ vi.mock("../infra/tailnet.js", () => ({
   pickPrimaryTailnetIPv4: mocks.pickPrimaryTailnetIPv4,
 }));
 
+vi.mock("../config/sessions.js", () => ({
+  resolveSessionTranscriptsDirForAgent: () => "/tmp/openclaw/sessions",
+}));
+
+vi.mock("../gateway/call.js", () => ({
+  callGateway: vi.fn(),
+}));
+
+vi.mock("../agents/workspace.js", () => ({
+  DEFAULT_AGENT_WORKSPACE_DIR: "/tmp/openclaw/workspace",
+  ensureAgentWorkspace: vi.fn(async ({ dir }: { dir: string }) => ({ dir })),
+}));
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -46,6 +58,7 @@ describe("openUrl", () => {
     const url =
       "https://accounts.google.com/o/oauth2/v2/auth?client_id=abc&response_type=code&redirect_uri=http%3A%2F%2Flocalhost";
 
+    const { openUrl } = await loadOnboardHelpers();
     const ok = await openUrl(url);
     expect(ok).toBe(true);
 
@@ -65,6 +78,7 @@ describe("openUrl", () => {
 describe("resolveBrowserOpenCommand", () => {
   it("marks win32 commands as quoteUrl=true", async () => {
     const platformSpy = vi.spyOn(process, "platform", "get").mockReturnValue("win32");
+    const { resolveBrowserOpenCommand } = await loadOnboardHelpers();
     const resolved = await resolveBrowserOpenCommand();
     expect(resolved.argv).toEqual(["cmd", "/c", "start", ""]);
     expect(resolved.quoteUrl).toBe(true);
@@ -73,7 +87,8 @@ describe("resolveBrowserOpenCommand", () => {
 });
 
 describe("resolveControlUiLinks", () => {
-  it("uses customBindHost for custom bind", () => {
+  it("uses customBindHost for custom bind", async () => {
+    const { resolveControlUiLinks } = await loadOnboardHelpers();
     const links = resolveControlUiLinks({
       port: 18789,
       bind: "custom",
@@ -83,7 +98,8 @@ describe("resolveControlUiLinks", () => {
     expect(links.wsUrl).toBe("ws://192.168.1.100:18789");
   });
 
-  it("falls back to loopback for invalid customBindHost", () => {
+  it("falls back to loopback for invalid customBindHost", async () => {
+    const { resolveControlUiLinks } = await loadOnboardHelpers();
     const links = resolveControlUiLinks({
       port: 18789,
       bind: "custom",
@@ -93,8 +109,9 @@ describe("resolveControlUiLinks", () => {
     expect(links.wsUrl).toBe("ws://127.0.0.1:18789");
   });
 
-  it("uses tailnet IP for tailnet bind", () => {
+  it("uses tailnet IP for tailnet bind", async () => {
     mocks.pickPrimaryTailnetIPv4.mockReturnValueOnce("100.64.0.9");
+    const { resolveControlUiLinks } = await loadOnboardHelpers();
     const links = resolveControlUiLinks({
       port: 18789,
       bind: "tailnet",
@@ -103,8 +120,9 @@ describe("resolveControlUiLinks", () => {
     expect(links.wsUrl).toBe("ws://100.64.0.9:18789");
   });
 
-  it("keeps loopback for auto even when tailnet is present", () => {
+  it("keeps loopback for auto even when tailnet is present", async () => {
     mocks.pickPrimaryTailnetIPv4.mockReturnValueOnce("100.64.0.9");
+    const { resolveControlUiLinks } = await loadOnboardHelpers();
     const links = resolveControlUiLinks({
       port: 18789,
       bind: "auto",
@@ -115,32 +133,38 @@ describe("resolveControlUiLinks", () => {
 });
 
 describe("normalizeGatewayTokenInput", () => {
-  it("returns empty string for undefined or null", () => {
+  it("returns empty string for undefined or null", async () => {
+    const { normalizeGatewayTokenInput } = await loadOnboardHelpers();
     expect(normalizeGatewayTokenInput(undefined)).toBe("");
     expect(normalizeGatewayTokenInput(null)).toBe("");
   });
 
-  it("trims string input", () => {
+  it("trims string input", async () => {
+    const { normalizeGatewayTokenInput } = await loadOnboardHelpers();
     expect(normalizeGatewayTokenInput("  token  ")).toBe("token");
   });
 
-  it("returns empty string for non-string input", () => {
+  it("returns empty string for non-string input", async () => {
+    const { normalizeGatewayTokenInput } = await loadOnboardHelpers();
     expect(normalizeGatewayTokenInput(123)).toBe("");
   });
 
-  it('rejects literal string coercion artifacts ("undefined"/"null")', () => {
+  it('rejects literal string coercion artifacts ("undefined"/"null")', async () => {
+    const { normalizeGatewayTokenInput } = await loadOnboardHelpers();
     expect(normalizeGatewayTokenInput("undefined")).toBe("");
     expect(normalizeGatewayTokenInput("null")).toBe("");
   });
 });
 
 describe("validateGatewayPasswordInput", () => {
-  it("requires a non-empty password", () => {
+  it("requires a non-empty password", async () => {
+    const { validateGatewayPasswordInput } = await loadOnboardHelpers();
     expect(validateGatewayPasswordInput("")).toBe("Required");
     expect(validateGatewayPasswordInput("   ")).toBe("Required");
   });
 
-  it("rejects literal string coercion artifacts", () => {
+  it("rejects literal string coercion artifacts", async () => {
+    const { validateGatewayPasswordInput } = await loadOnboardHelpers();
     expect(validateGatewayPasswordInput("undefined")).toBe(
       'Cannot be the literal string "undefined" or "null"',
     );
@@ -149,7 +173,8 @@ describe("validateGatewayPasswordInput", () => {
     );
   });
 
-  it("accepts a normal password", () => {
+  it("accepts a normal password", async () => {
+    const { validateGatewayPasswordInput } = await loadOnboardHelpers();
     expect(validateGatewayPasswordInput(" secret ")).toBeUndefined();
   });
 });

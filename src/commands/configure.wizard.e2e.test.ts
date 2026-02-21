@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
 
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 const mocks = vi.hoisted(() => ({
   clackIntro: vi.fn(),
   clackOutro: vi.fn(),

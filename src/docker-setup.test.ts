@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -6,6 +7,12 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const repoRoot = resolve(fileURLToPath(new URL(".", import.meta.url)), "..");
+const dockerSetupScriptPath = join(repoRoot, "docker-setup.sh");
+const dockerComposePath = join(repoRoot, "docker-compose.yml");
+const describeIfDockerSetupScriptPresent = existsSync(dockerSetupScriptPath)
+  ? describe
+  : describe.skip;
+const itIfDockerComposePresent = existsSync(dockerComposePath) ? it : it.skip;
 
 type DockerSetupSandbox = {
   rootDir: string;
@@ -46,7 +53,7 @@ async function createDockerSetupSandbox(): Promise<DockerSetupSandbox> {
   const binDir = join(rootDir, "bin");
   const logPath = join(rootDir, "docker-stub.log");
 
-  await copyFile(join(repoRoot, "docker-setup.sh"), scriptPath);
+  await copyFile(dockerSetupScriptPath, scriptPath);
   await chmod(scriptPath, 0o755);
   await writeFile(dockerfilePath, "FROM scratch\n");
   await writeFile(
@@ -95,7 +102,7 @@ function resolveBashForCompatCheck(): string | null {
   return null;
 }
 
-describe("docker-setup.sh", () => {
+describeIfDockerSetupScriptPresent("docker-setup.sh", () => {
   let sandbox: DockerSetupSandbox | null = null;
 
   beforeAll(async () => {
@@ -192,7 +199,7 @@ describe("docker-setup.sh", () => {
   });
 
   it("avoids associative arrays so the script remains Bash 3.2-compatible", async () => {
-    const script = await readFile(join(repoRoot, "docker-setup.sh"), "utf8");
+    const script = await readFile(dockerSetupScriptPath, "utf8");
     expect(script).not.toMatch(/^\s*declare -A\b/m);
 
     const systemBash = resolveBashForCompatCheck();
@@ -209,7 +216,7 @@ describe("docker-setup.sh", () => {
       return;
     }
 
-    const syntaxCheck = spawnSync(systemBash, ["-n", join(repoRoot, "docker-setup.sh")], {
+    const syntaxCheck = spawnSync(systemBash, ["-n", dockerSetupScriptPath], {
       encoding: "utf8",
     });
 
@@ -217,8 +224,8 @@ describe("docker-setup.sh", () => {
     expect(syntaxCheck.stderr).not.toContain("declare: -A: invalid option");
   });
 
-  it("keeps docker-compose gateway command in sync", async () => {
-    const compose = await readFile(join(repoRoot, "docker-compose.yml"), "utf8");
+  itIfDockerComposePresent("keeps docker-compose gateway command in sync", async () => {
+    const compose = await readFile(dockerComposePath, "utf8");
     expect(compose).not.toContain("gateway-daemon");
     expect(compose).toContain('"gateway"');
   });

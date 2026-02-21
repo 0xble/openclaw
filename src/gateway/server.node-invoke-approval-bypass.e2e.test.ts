@@ -59,11 +59,30 @@ async function requestAllowOnceApproval(ws: WebSocket, command: string): Promise
 describe("node.invoke approval bypass", () => {
   let server: Awaited<ReturnType<typeof startServerWithClient>>["server"];
   let port: number;
+  const nodeIdentity = (() => {
+    const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+    const publicKeyPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+    const privateKeyPem = privateKey.export({ type: "pkcs8", format: "pem" }).toString();
+    const publicKeyRaw = publicKeyRawBase64UrlFromPem(publicKeyPem);
+    const deviceId = deriveDeviceIdFromPublicKey(publicKeyRaw);
+    if (!deviceId) {
+      throw new Error("failed to derive node device id");
+    }
+    return { deviceId, publicKeyPem, privateKeyPem };
+  })();
 
   beforeAll(async () => {
     const started = await startServerWithClient("secret", { controlUiEnabled: true });
     server = started.server;
     port = started.port;
+    const pairWs = new WebSocket(`ws://127.0.0.1:${port}`);
+    await new Promise<void>((resolve) => pairWs.once("open", resolve));
+    const pairRes = await connectReq(pairWs, {
+      token: "secret",
+      scopes: ["operator.write", "operator.approvals"],
+    });
+    expect(pairRes.ok).toBe(true);
+    pairWs.close();
   });
 
   afterAll(async () => {
@@ -168,6 +187,7 @@ describe("node.invoke approval bypass", () => {
       url: `ws://127.0.0.1:${port}`,
       connectDelayMs: 0,
       token: "secret",
+      deviceIdentity: nodeIdentity,
       role: "node",
       clientName: GATEWAY_CLIENT_NAMES.NODE_HOST,
       clientVersion: "1.0.0",

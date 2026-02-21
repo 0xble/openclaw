@@ -79,15 +79,29 @@ function applySkillConfigEnvOverrides(params: {
   skillConfig: SkillConfig;
   primaryEnv?: string | null;
   requiredEnv?: string[] | null;
+  additionalAllowedSensitiveKeys?: string[] | null;
   skillKey: string;
 }) {
-  const { updates, skillConfig, primaryEnv, requiredEnv, skillKey } = params;
+  const {
+    updates,
+    skillConfig,
+    primaryEnv,
+    requiredEnv,
+    additionalAllowedSensitiveKeys,
+    skillKey,
+  } = params;
   const allowedSensitiveKeys = new Set<string>();
   const normalizedPrimaryEnv = primaryEnv?.trim();
   if (normalizedPrimaryEnv) {
     allowedSensitiveKeys.add(normalizedPrimaryEnv);
   }
   for (const envName of requiredEnv ?? []) {
+    const trimmedEnv = envName.trim();
+    if (trimmedEnv) {
+      allowedSensitiveKeys.add(trimmedEnv);
+    }
+  }
+  for (const envName of additionalAllowedSensitiveKeys ?? []) {
     const trimmedEnv = envName.trim();
     if (trimmedEnv) {
       allowedSensitiveKeys.add(trimmedEnv);
@@ -188,6 +202,7 @@ export function applySkillEnvOverridesFromSnapshot(params: {
       skillConfig,
       primaryEnv: skill.primaryEnv,
       requiredEnv: skill.requiredEnv,
+      additionalAllowedSensitiveKeys: skillConfig.env ? Object.keys(skillConfig.env) : undefined,
       skillKey: skill.name,
     });
   }

@@ -674,7 +674,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
           ),
         ),
       );
-      normalizeConfigPaths(cfg);
+      normalizeConfigPaths(cfg, { env: deps.env, homedir: deps.homedir });
 
       const duplicates = findDuplicateAgentDirs(cfg, {
         env: deps.env,
@@ -895,6 +895,7 @@ export function createConfigIO(overrides: ConfigIoDeps = {}) {
                 ),
               ),
             ),
+            { env: deps.env, homedir: deps.homedir },
           ),
           hash,
           issues: [],

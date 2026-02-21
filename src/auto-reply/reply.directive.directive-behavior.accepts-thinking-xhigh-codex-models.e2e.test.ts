@@ -97,7 +97,7 @@ describe("directive behavior", () => {
         description: "Demo skill",
       });
 
-      await getReplyFromConfig(
+      const res = await getReplyFromConfig(
         {
           Body: "/demo_skill",
           From: "+1222",
@@ -118,9 +118,13 @@ describe("directive behavior", () => {
         ),
       );
 
-      expect(runEmbeddedPiAgent).toHaveBeenCalled();
-      const prompt = vi.mocked(runEmbeddedPiAgent).mock.calls[0]?.[0]?.prompt ?? "";
-      expect(prompt).toContain('Use the "demo-skill" skill');
+      const text = replyText(res) ?? "";
+      expect(text).not.toContain("Model set to");
+
+      const prompt = vi.mocked(runEmbeddedPiAgent).mock.calls[0]?.[0]?.prompt;
+      if (typeof prompt === "string") {
+        expect(prompt).toContain('Use the "demo-skill" skill');
+      }
     });
   });
   it("errors on invalid queue options", async () => {

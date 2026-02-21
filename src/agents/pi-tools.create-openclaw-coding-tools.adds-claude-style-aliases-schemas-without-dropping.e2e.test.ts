@@ -11,6 +11,18 @@ import { createOpenClawReadTool, createSandboxedReadTool } from "./pi-tools.read
 import { createHostSandboxFsBridge } from "./test-helpers/host-sandbox-fs-bridge.js";
 import { createBrowserTool } from "./tools/browser-tool.js";
 
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
+vi.mock("./channel-tools.js", async () => {
+  const actual = await vi.importActual<typeof import("./channel-tools.js")>("./channel-tools.js");
+  return {
+    ...actual,
+    listChannelAgentTools: () => [],
+  };
+});
+
 const defaultTools = createOpenClawCodingTools();
 
 function findUnionKeywordOffenders(
@@ -507,11 +519,8 @@ describe("createOpenClawCodingTools", () => {
       return found;
     };
 
-    const googleTools = createOpenClawCodingTools({
-      modelProvider: "google",
-      senderIsOwner: true,
-    });
-    for (const tool of googleTools) {
+    const cloudCodeAssistTools = createOpenClawCodingTools({ modelProvider: "google" });
+    for (const tool of cloudCodeAssistTools) {
       const violations = findUnsupportedKeywords(tool.parameters, `${tool.name}.parameters`);
       expect(violations).toEqual([]);
     }

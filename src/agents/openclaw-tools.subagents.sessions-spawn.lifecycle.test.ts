@@ -340,17 +340,13 @@ describe("openclaw-tools: subagents (sessions_spawn lifecycle)", () => {
       runId: "run-1",
     });
 
-    await waitFor(() => calls.filter((call) => call.method === "agent").length >= 2);
+    await waitFor(() => calls.some((call) => call.method === "send"));
 
-    const mainAgentCall = calls
-      .filter((call) => call.method === "agent")
-      .find((call) => {
-        const params = call.params as { lane?: string } | undefined;
-        return params?.lane !== "subagent";
-      });
-    const mainMessage = (mainAgentCall?.params as { message?: string } | undefined)?.message ?? "";
+    const announceSend = calls.find((call) => call.method === "send");
+    const mainMessage = (announceSend?.params as { message?: string } | undefined)?.message ?? "";
 
-    expect(mainMessage).toContain("timed out");
+    expect(mainMessage).toContain("✅ Subagent main finished");
+    expect(mainMessage).toContain("still working");
     expect(mainMessage).not.toContain("completed successfully");
   });
 
@@ -427,12 +423,12 @@ describe("openclaw-tools: subagents (sessions_spawn lifecycle)", () => {
     }
 
     const agentCalls = calls.filter((call) => call.method === "agent");
-    expect(agentCalls).toHaveLength(2);
-    const announceParams = agentCalls[1]?.params as
-      | { accountId?: string; channel?: string; deliver?: boolean }
+    expect(agentCalls).toHaveLength(1);
+    const announceSend = calls.find((call) => call.method === "send");
+    const announceParams = announceSend?.params as
+      | { accountId?: string; channel?: string; sessionKey?: string }
       | undefined;
-    expect(announceParams?.deliver).toBe(true);
-    expect(announceParams?.channel).toBe("whatsapp");
+    expect(announceParams?.sessionKey).toBe("agent:main:main");
     expect(announceParams?.accountId).toBe("kev");
   });
 });

@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import {
-  applyModelAllowlist,
-  applyModelFallbacksFromSelection,
-  promptDefaultModel,
-  promptModelAllowlist,
-} from "./model-picker.js";
 import { makePrompter } from "./onboarding/__tests__/test-utils.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
+const loadModelPicker = async () => await import("./model-picker.js");
 
 const loadModelCatalog = vi.hoisted(() => vi.fn());
 vi.mock("../agents/model-catalog.js", () => ({
@@ -61,6 +61,29 @@ function createSelectAllMultiselect() {
 }
 
 describe("promptDefaultModel", () => {
+  it("filters internal router models from the selection list", async () => {
+    loadModelCatalog.mockResolvedValue(OPENROUTER_CATALOG);
+
+    const select = vi.fn(async (params) => {
+      const first = params.options[0];
+      return first?.value ?? "";
+    });
+    const prompter = makePrompter({ select });
+    const config = { agents: { defaults: {} } } as OpenClawConfig;
+    const { promptDefaultModel } = await loadModelPicker();
+
+    await promptDefaultModel({
+      config,
+      prompter,
+      allowKeep: false,
+      includeManual: false,
+      ignoreAllowlist: true,
+    });
+
+    const options = select.mock.calls[0]?.[0]?.options ?? [];
+    expectRouterModelFiltering(options);
+  });
+
   it("supports configuring vLLM during onboarding", async () => {
     loadModelCatalog.mockResolvedValue([
       {
@@ -81,6 +104,7 @@ describe("promptDefaultModel", () => {
       .mockResolvedValueOnce("meta-llama/Meta-Llama-3-8B-Instruct");
     const prompter = makePrompter({ select, text: text as never });
     const config = { agents: { defaults: {} } } as OpenClawConfig;
+    const { promptDefaultModel } = await loadModelPicker();
 
     const result = await promptDefaultModel({
       config,
@@ -111,6 +135,22 @@ describe("promptDefaultModel", () => {
 });
 
 describe("promptModelAllowlist", () => {
+  it("filters internal router models from the selection list", async () => {
+    loadModelCatalog.mockResolvedValue(OPENROUTER_CATALOG);
+
+    const multiselect = createSelectAllMultiselect();
+    const prompter = makePrompter({ multiselect });
+    const config = { agents: { defaults: {} } } as OpenClawConfig;
+    const { promptModelAllowlist } = await loadModelPicker();
+
+    await promptModelAllowlist({ config, prompter });
+
+    const call = multiselect.mock.calls[0]?.[0];
+    const options = call?.options ?? [];
+    expectRouterModelFiltering(options as Array<{ value: string }>);
+    expect(call?.searchable).toBe(true);
+  });
+
   it("filters to allowed keys when provided", async () => {
     loadModelCatalog.mockResolvedValue([
       {
@@ -133,6 +173,7 @@ describe("promptModelAllowlist", () => {
     const multiselect = createSelectAllMultiselect();
     const prompter = makePrompter({ multiselect });
     const config = { agents: { defaults: {} } } as OpenClawConfig;
+    const { promptModelAllowlist } = await loadModelPicker();
 
     await promptModelAllowlist({
       config,
@@ -147,39 +188,8 @@ describe("promptModelAllowlist", () => {
   });
 });
 
-describe("router model filtering", () => {
-  it("filters internal router models in both default and allowlist prompts", async () => {
-    loadModelCatalog.mockResolvedValue(OPENROUTER_CATALOG);
-
-    const select = vi.fn(async (params) => {
-      const first = params.options[0];
-      return first?.value ?? "";
-    });
-    const multiselect = createSelectAllMultiselect();
-    const defaultPrompter = makePrompter({ select });
-    const allowlistPrompter = makePrompter({ multiselect });
-    const config = { agents: { defaults: {} } } as OpenClawConfig;
-
-    await promptDefaultModel({
-      config,
-      prompter: defaultPrompter,
-      allowKeep: false,
-      includeManual: false,
-      ignoreAllowlist: true,
-    });
-    await promptModelAllowlist({ config, prompter: allowlistPrompter });
-
-    const defaultOptions = select.mock.calls[0]?.[0]?.options ?? [];
-    expectRouterModelFiltering(defaultOptions);
-
-    const allowlistCall = multiselect.mock.calls[0]?.[0];
-    expectRouterModelFiltering(allowlistCall?.options as Array<{ value: string }>);
-    expect(allowlistCall?.searchable).toBe(true);
-  });
-});
-
 describe("applyModelAllowlist", () => {
-  it("preserves existing entries for selected models", () => {
+  it("preserves existing entries for selected models", async () => {
     const config = {
       agents: {
         defaults: {
@@ -190,6 +200,7 @@ describe("applyModelAllowlist", () => {
         },
       },
     } as OpenClawConfig;
+    const { applyModelAllowlist } = await loadModelPicker();
 
     const next = applyModelAllowlist(config, ["openai/gpt-5.2"]);
     expect(next.agents?.defaults?.models).toEqual({
@@ -197,7 +208,7 @@ describe("applyModelAllowlist", () => {
     });
   });
 
-  it("clears the allowlist when no models remain", () => {
+  it("clears the allowlist when no models remain", async () => {
     const config = {
       agents: {
         defaults: {
@@ -207,6 +218,7 @@ describe("applyModelAllowlist", () => {
         },
       },
     } as OpenClawConfig;
+    const { applyModelAllowlist } = await loadModelPicker();
 
     const next = applyModelAllowlist(config, []);
     expect(next.agents?.defaults?.models).toBeUndefined();
@@ -214,7 +226,7 @@ describe("applyModelAllowlist", () => {
 });
 
 describe("applyModelFallbacksFromSelection", () => {
-  it("sets fallbacks from selection when the primary is included", () => {
+  it("sets fallbacks from selection when the primary is included", async () => {
     const config = {
       agents: {
         defaults: {
@@ -222,6 +234,7 @@ describe("applyModelFallbacksFromSelection", () => {
         },
       },
     } as OpenClawConfig;
+    const { applyModelFallbacksFromSelection } = await loadModelPicker();
 
     const next = applyModelFallbacksFromSelection(config, [
       "anthropic/claude-opus-4-5",
@@ -233,7 +246,7 @@ describe("applyModelFallbacksFromSelection", () => {
     });
   });
 
-  it("keeps existing fallbacks when the primary is not selected", () => {
+  it("keeps existing fallbacks when the primary is not selected", async () => {
     const config = {
       agents: {
         defaults: {
@@ -241,6 +254,7 @@ describe("applyModelFallbacksFromSelection", () => {
         },
       },
     } as OpenClawConfig;
+    const { applyModelFallbacksFromSelection } = await loadModelPicker();
 
     const next = applyModelFallbacksFromSelection(config, ["openai/gpt-5.2"]);
     expect(next.agents?.defaults?.model).toEqual({

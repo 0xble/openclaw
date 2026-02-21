@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import type { RuntimeEnv } from "../runtime.js";
 
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 const mocks = vi.hoisted(() => ({
   text: vi.fn(),
   select: vi.fn(),

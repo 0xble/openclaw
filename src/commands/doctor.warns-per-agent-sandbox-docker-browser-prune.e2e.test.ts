@@ -1,16 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { stripAnsi } from "../terminal/ansi.js";
 import { createDoctorRuntime, mockDoctorConfigSnapshot, note } from "./doctor.e2e-harness.js";
 
-let doctorCommand: typeof import("./doctor.js").doctorCommand;
+vi.hoisted(() => {
+  vi.resetModules();
+});
 
 describe("doctor command", () => {
-  beforeAll(async () => {
-    ({ doctorCommand } = await import("./doctor.js"));
-  });
-
   it("warns when per-agent sandbox docker/browser/prune overrides are ignored under shared scope", async () => {
     mockDoctorConfigSnapshot({
       config: {
@@ -40,11 +39,13 @@ describe("doctor command", () => {
 
     note.mockClear();
 
+    const { doctorCommand } = await import("./doctor.js");
     await doctorCommand(createDoctorRuntime(), { nonInteractive: true });
 
     expect(
       note.mock.calls.some(([message, title]) => {
-        if (title !== "Sandbox" || typeof message !== "string") {
+        const normalizedTitle = typeof title === "string" ? stripAnsi(title) : "";
+        if (normalizedTitle !== "Sandbox" || typeof message !== "string") {
           return false;
         }
         const normalized = message.replace(/\s+/g, " ").trim();
@@ -79,9 +80,15 @@ describe("doctor command", () => {
       return realExists(value as never);
     });
 
+    const { doctorCommand } = await import("./doctor.js");
     await doctorCommand(createDoctorRuntime(), { nonInteractive: true });
 
-    expect(note.mock.calls.some(([_, title]) => title === "Extra workspace")).toBe(false);
+    expect(
+      note.mock.calls.some(([_, title]) => {
+        const normalizedTitle = typeof title === "string" ? stripAnsi(title) : "";
+        return normalizedTitle === "Extra workspace";
+      }),
+    ).toBe(false);
 
     homedirSpy.mockRestore();
     existsSpy.mockRestore();

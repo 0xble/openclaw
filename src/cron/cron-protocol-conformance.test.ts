@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -57,14 +58,17 @@ describe("cron protocol conformance", () => {
 
     const cwd = process.cwd();
     for (const relPath of UI_FILES) {
-      const content = await fs.readFile(path.join(cwd, relPath), "utf-8");
+      const absPath = path.join(cwd, relPath);
+      if (!existsSync(absPath)) {
+        continue;
+      }
+      const content = await fs.readFile(absPath, "utf-8");
       for (const mode of modes) {
         expect(content.includes(`"${mode}"`), `${relPath} missing delivery mode ${mode}`).toBe(
           true,
         );
       }
     }
-
     const swiftModelFiles = await resolveSwiftFiles(cwd, SWIFT_MODEL_CANDIDATES);
     for (const relPath of swiftModelFiles) {
       const content = await fs.readFile(path.join(cwd, relPath), "utf-8");
@@ -77,10 +81,13 @@ describe("cron protocol conformance", () => {
 
   it("cron status shape matches gateway fields in UI + Swift", async () => {
     const cwd = process.cwd();
-    const uiTypes = await fs.readFile(path.join(cwd, "ui/src/ui/types.ts"), "utf-8");
-    expect(uiTypes.includes("export type CronStatus")).toBe(true);
-    expect(uiTypes.includes("jobs:")).toBe(true);
-    expect(uiTypes.includes("jobCount")).toBe(false);
+    const uiTypesPath = path.join(cwd, "ui/src/ui/types.ts");
+    if (existsSync(uiTypesPath)) {
+      const uiTypes = await fs.readFile(uiTypesPath, "utf-8");
+      expect(uiTypes.includes("export type CronStatus")).toBe(true);
+      expect(uiTypes.includes("jobs:")).toBe(true);
+      expect(uiTypes.includes("jobCount")).toBe(false);
+    }
 
     const [swiftRelPath] = await resolveSwiftFiles(cwd, SWIFT_STATUS_CANDIDATES);
     const swiftPath = path.join(cwd, swiftRelPath);

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
   ChannelMessageActionAdapter,
   ChannelOutboundAdapter,
@@ -7,7 +7,11 @@ import type {
 import type { CliDeps } from "../cli/deps.js";
 import type { RuntimeEnv } from "../runtime.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
-import { captureEnv } from "../test-utils/env.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 const loadMessageCommand = async () => await import("./message.js");
 
 let testConfig: Record<string, unknown> = {};
@@ -20,11 +24,15 @@ vi.mock("../config/config.js", async (importOriginal) => {
 });
 
 const callGatewayMock = vi.fn();
-vi.mock("../gateway/call.js", () => ({
-  callGateway: callGatewayMock,
-  callGatewayLeastPrivilege: callGatewayMock,
-  randomIdempotencyKey: () => "idem-1",
-}));
+vi.mock("../gateway/call.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../gateway/call.js")>();
+  return {
+    ...actual,
+    callGateway: callGatewayMock,
+    callGatewayLeastPrivilege: callGatewayMock,
+    randomIdempotencyKey: () => "idem-1",
+  };
+});
 
 const webAuthExists = vi.fn(async () => false);
 vi.mock("../web/session.js", () => ({
@@ -51,7 +59,8 @@ vi.mock("../agents/tools/whatsapp-actions.js", () => ({
   handleWhatsAppAction,
 }));
 
-let envSnapshot: ReturnType<typeof captureEnv>;
+const originalTelegramToken = process.env.TELEGRAM_BOT_TOKEN;
+const originalDiscordToken = process.env.DISCORD_BOT_TOKEN;
 
 const setRegistry = async (registry: ReturnType<typeof createTestRegistry>) => {
   const { setActivePluginRegistry } = await import("../plugins/runtime.js");
@@ -59,21 +68,21 @@ const setRegistry = async (registry: ReturnType<typeof createTestRegistry>) => {
 };
 
 beforeEach(async () => {
-  envSnapshot = captureEnv(["TELEGRAM_BOT_TOKEN", "DISCORD_BOT_TOKEN"]);
   process.env.TELEGRAM_BOT_TOKEN = "";
   process.env.DISCORD_BOT_TOKEN = "";
   testConfig = {};
   await setRegistry(createTestRegistry([]));
-  callGatewayMock.mockClear();
-  webAuthExists.mockClear().mockResolvedValue(false);
-  handleDiscordAction.mockClear();
-  handleSlackAction.mockClear();
-  handleTelegramAction.mockClear();
-  handleWhatsAppAction.mockClear();
+  callGatewayMock.mockReset();
+  webAuthExists.mockReset().mockResolvedValue(false);
+  handleDiscordAction.mockReset();
+  handleSlackAction.mockReset();
+  handleTelegramAction.mockReset();
+  handleWhatsAppAction.mockReset();
 });
 
-afterEach(() => {
-  envSnapshot.restore();
+afterAll(() => {
+  process.env.TELEGRAM_BOT_TOKEN = originalTelegramToken;
+  process.env.DISCORD_BOT_TOKEN = originalDiscordToken;
 });
 
 const runtime: RuntimeEnv = {

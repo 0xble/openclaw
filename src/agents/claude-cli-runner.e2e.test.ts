@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { runClaudeCliAgent } from "./claude-cli-runner.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
 
 const mocks = vi.hoisted(() => ({
   spawn: vi.fn(),
@@ -78,6 +81,7 @@ describe("runClaudeCliAgent", () => {
   });
 
   it("starts a new session with --session-id when none is provided", async () => {
+    const { runClaudeCliAgent } = await import("./claude-cli-runner.js");
     mocks.spawn.mockResolvedValueOnce(
       createManagedRun(Promise.resolve(successExit({ message: "ok", session_id: "sid-1" }))),
     );
@@ -101,6 +105,7 @@ describe("runClaudeCliAgent", () => {
   });
 
   it("uses --resume when a claude session id is provided", async () => {
+    const { runClaudeCliAgent } = await import("./claude-cli-runner.js");
     mocks.spawn.mockResolvedValueOnce(
       createManagedRun(Promise.resolve(successExit({ message: "ok", session_id: "sid-2" }))),
     );
@@ -125,6 +130,7 @@ describe("runClaudeCliAgent", () => {
   });
 
   it("serializes concurrent claude-cli runs", async () => {
+    const { runClaudeCliAgent } = await import("./claude-cli-runner.js");
     const firstDeferred = createDeferred<ReturnType<typeof successExit>>();
     const secondDeferred = createDeferred<ReturnType<typeof successExit>>();
 

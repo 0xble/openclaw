@@ -1,8 +1,6 @@
-import { MatrixClient } from "@vector-im/matrix-bot-sdk";
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import { getMatrixRuntime } from "../../runtime.js";
 import type { CoreConfig } from "../../types.js";
-import { ensureMatrixSdkLoggingConfigured } from "./logging.js";
 import type { MatrixAuth, MatrixResolvedConfig } from "./types.js";
 
 function clean(value?: string): string {
@@ -118,7 +116,9 @@ export async function resolveMatrixAuth(params?: {
     let userId = resolved.userId;
     if (!userId) {
       // Fetch userId from access token via whoami
+      const { ensureMatrixSdkLoggingConfigured } = await import("./logging.js");
       ensureMatrixSdkLoggingConfigured();
+      const { MatrixClient } = await import("@vector-im/matrix-bot-sdk");
       const tempClient = new MatrixClient(resolved.homeserver, resolved.accessToken);
       const whoami = await tempClient.getUserId();
       userId = whoami;

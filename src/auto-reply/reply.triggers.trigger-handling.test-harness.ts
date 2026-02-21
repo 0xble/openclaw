@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, expect, vi } from "vitest";
+import { afterEach, beforeEach, expect, vi } from "vitest";
 import { withTempHome as withTempHomeBase } from "../../test/helpers/temp-home.js";
 import type { OpenClawConfig } from "../config/config.js";
 
@@ -9,6 +9,10 @@ import type { OpenClawConfig } from "../config/config.js";
 type AnyMock = any;
 // oxlint-disable-next-line typescript/no-explicit-any
 type AnyMocks = Record<string, any>;
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
 
 const piEmbeddedMocks = vi.hoisted(() => ({
   abortEmbeddedPiRun: vi.fn().mockReturnValue(false),
@@ -239,7 +243,13 @@ export async function runGreetingPromptForBareNewOrReset(params: {
 }
 
 export function installTriggerHandlingE2eTestHooks() {
+  beforeEach(() => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "anthropic-test-key");
+    vi.stubEnv("OPENAI_API_KEY", "openai-test-key");
+  });
+
   afterEach(() => {
+    vi.unstubAllEnvs();
     vi.restoreAllMocks();
   });
 }

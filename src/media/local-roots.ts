@@ -1,19 +1,25 @@
+import os from "node:os";
 import path from "node:path";
 import { resolveAgentWorkspaceDir } from "../agents/agent-scope.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { resolveStateDir } from "../config/paths.js";
 import { resolvePreferredOpenClawTmpDir } from "../infra/tmp-openclaw-dir.js";
+import { mergeInboundPathRoots } from "./inbound-path-policy.js";
 
 function buildMediaLocalRoots(stateDir: string): string[] {
   const resolvedStateDir = path.resolve(stateDir);
   const preferredTmpDir = resolvePreferredOpenClawTmpDir();
-  return [
-    preferredTmpDir,
-    path.join(resolvedStateDir, "media"),
-    path.join(resolvedStateDir, "agents"),
-    path.join(resolvedStateDir, "workspace"),
-    path.join(resolvedStateDir, "sandboxes"),
-  ];
+  // Keep compatibility with callers/tests that stage media under the OS temp root,
+  // while still preferring the hardened OpenClaw temp directory when available.
+  return mergeInboundPathRoots(
+    [preferredTmpDir, os.tmpdir()],
+    [
+      path.join(resolvedStateDir, "media"),
+      path.join(resolvedStateDir, "agents"),
+      path.join(resolvedStateDir, "workspace"),
+      path.join(resolvedStateDir, "sandboxes"),
+    ],
+  );
 }
 
 export function getDefaultMediaLocalRoots(): readonly string[] {

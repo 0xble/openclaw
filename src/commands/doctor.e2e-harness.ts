@@ -102,6 +102,7 @@ export const serviceUninstall = vi.fn().mockResolvedValue(undefined) as unknown 
 export const callGateway = vi
   .fn()
   .mockRejectedValue(new Error("gateway closed")) as unknown as MockFn;
+export const healthCommand = vi.fn().mockResolvedValue(undefined) as unknown as MockFn;
 
 export const autoMigrateLegacyStateDir = vi.fn().mockResolvedValue({
   migrated: false,
@@ -282,7 +283,7 @@ vi.mock("../utils.js", async (importOriginal) => {
 });
 
 vi.mock("./health.js", () => ({
-  healthCommand: vi.fn().mockResolvedValue(undefined),
+  healthCommand,
 }));
 
 vi.mock("./onboard-helpers.js", () => ({
@@ -393,6 +394,7 @@ beforeEach(() => {
   serviceRestart.mockReset().mockResolvedValue(undefined);
   serviceUninstall.mockReset().mockResolvedValue(undefined);
   callGateway.mockReset().mockRejectedValue(new Error("gateway closed"));
+  healthCommand.mockReset().mockResolvedValue(undefined);
 
   originalIsTTY = process.stdin.isTTY;
   setStdinTty(true);

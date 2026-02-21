@@ -22,11 +22,6 @@ import { resolveSlackChannelConfig, type SlackChannelConfigResolved } from "./ch
 import { buildSlackSlashCommandMatcher, resolveSlackSlashCommandConfig } from "./commands.js";
 import type { SlackMonitorContext } from "./context.js";
 import { normalizeSlackChannelType } from "./context.js";
-import {
-  createSlackExternalArgMenuStore,
-  SLACK_EXTERNAL_ARG_MENU_PREFIX,
-  type SlackExternalArgMenuChoice,
-} from "./external-arg-menu-store.js";
 import { escapeSlackMrkdwn } from "./mrkdwn.js";
 import { isSlackChannelAllowedByPolicy } from "./policy.js";
 import { resolveSlackRoomContextHints } from "./room-context.js";
@@ -40,10 +35,15 @@ const SLACK_COMMAND_ARG_OVERFLOW_MIN = 3;
 const SLACK_COMMAND_ARG_OVERFLOW_MAX = 5;
 const SLACK_COMMAND_ARG_SELECT_OPTIONS_MAX = 100;
 const SLACK_COMMAND_ARG_SELECT_OPTION_VALUE_MAX = 75;
+const SLACK_COMMAND_ARG_EXTERNAL_PREFIX = "openclaw_cmdarg_ext:";
+const SLACK_COMMAND_ARG_EXTERNAL_TTL_MS = 10 * 60 * 1000;
 const SLACK_HEADER_TEXT_MAX = 150;
 
-type EncodedMenuChoice = SlackExternalArgMenuChoice;
-const slackExternalArgMenuStore = createSlackExternalArgMenuStore();
+type EncodedMenuChoice = { label: string; value: string };
+const slackExternalArgMenuStore = new Map<
+  string,
+  { choices: EncodedMenuChoice[]; userId: string; expiresAt: number }
+>();
 
 function truncatePlainText(value: string, max: number): string {
   const trimmed = value.trim();
@@ -70,18 +70,34 @@ function buildSlackArgMenuConfirm(params: { command: string; arg: string }) {
   };
 }
 
+function pruneSlackExternalArgMenuStore(now = Date.now()) {
+  for (const [token, entry] of slackExternalArgMenuStore.entries()) {
+    if (entry.expiresAt <= now) {
+      slackExternalArgMenuStore.delete(token);
+    }
+  }
+}
+
 function storeSlackExternalArgMenu(params: {
   choices: EncodedMenuChoice[];
   userId: string;
 }): string {
-  return slackExternalArgMenuStore.create({
+  pruneSlackExternalArgMenuStore();
+  const token = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  slackExternalArgMenuStore.set(token, {
     choices: params.choices,
     userId: params.userId,
+    expiresAt: Date.now() + SLACK_COMMAND_ARG_EXTERNAL_TTL_MS,
   });
+  return token;
 }
 
 function readSlackExternalArgMenuToken(raw: unknown): string | undefined {
-  return slackExternalArgMenuStore.readToken(raw);
+  if (typeof raw !== "string" || !raw.startsWith(SLACK_COMMAND_ARG_EXTERNAL_PREFIX)) {
+    return undefined;
+  }
+  const token = raw.slice(SLACK_COMMAND_ARG_EXTERNAL_PREFIX.length).trim();
+  return token.length > 0 ? token : undefined;
 }
 
 type CommandsRegistry = typeof import("../../auto-reply/commands-registry.js");
@@ -197,7 +213,7 @@ function buildSlackCommandArgMenuBlocks(params: {
       ? [
           {
             type: "actions",
-            block_id: `${SLACK_EXTERNAL_ARG_MENU_PREFIX}${params.createExternalMenuToken(
+            block_id: `${SLACK_COMMAND_ARG_EXTERNAL_PREFIX}${params.createExternalMenuToken(
               encodedChoices,
             )}`,
             elements: [
@@ -282,7 +298,7 @@ export async function registerSlackMonitorSlashCommands(params: {
 
   const supportsInteractiveArgMenus =
     typeof (ctx.app as { action?: unknown }).action === "function";
-  const supportsExternalArgMenus = typeof (ctx.app as { options?: unknown }).options === "function";
+  let supportsExternalArgMenus = typeof (ctx.app as { options?: unknown }).options === "function";
 
   const slashCommand = resolveSlackSlashCommandConfig(
     ctx.slashCommand ?? account.config.slashCommand,
@@ -334,10 +350,7 @@ export async function registerSlackMonitorSlashCommands(params: {
         return;
       }
 
-      const storeAllowFrom =
-        ctx.dmPolicy === "allowlist"
-          ? []
-          : await readChannelAllowFromStore("slack").catch(() => []);
+      const storeAllowFrom = await readChannelAllowFromStore("slack").catch(() => []);
       const effectiveAllowFrom = normalizeAllowList([...ctx.allowFrom, ...storeAllowFrom]);
       const effectiveAllowFromLower = normalizeAllowListLower(effectiveAllowFrom);
 
@@ -523,14 +536,9 @@ export async function registerSlackMonitorSlashCommands(params: {
           import("../../auto-reply/reply/inbound-context.js"),
           import("../../auto-reply/reply/provider-dispatcher.js"),
         ]);
-      const [
-        { resolveConversationLabel },
-        { createReplyPrefixOptions },
-        { recordSessionMetaFromInbound, resolveStorePath },
-      ] = await Promise.all([
+      const [{ resolveConversationLabel }, { createReplyPrefixOptions }] = await Promise.all([
         import("../../channels/conversation-label.js"),
         import("../../channels/reply-prefix.js"),
-        import("../../config/sessions.js"),
       ]);
 
       const route = resolveAgentRoute({
@@ -593,19 +601,6 @@ export async function registerSlackMonitorSlashCommands(params: {
         OriginatingChannel: "slack" as const,
         OriginatingTo: `user:${command.user_id}`,
       });
-
-      const storePath = resolveStorePath(cfg.session?.store, {
-        agentId: route.agentId,
-      });
-      try {
-        await recordSessionMetaFromInbound({
-          storePath,
-          sessionKey: ctxPayload.SessionKey ?? route.sessionKey,
-          ctx: ctxPayload,
-        });
-      } catch (err) {
-        runtime.error?.(danger(`slack slash: failed updating session meta: ${String(err)}`));
-      }
 
       const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
         cfg,
@@ -735,7 +730,7 @@ export async function registerSlackMonitorSlashCommands(params: {
     return;
   }
 
-  const registerArgOptions = () => {
+  const registerArgOptions = (): boolean => {
     const appWithOptions = ctx.app as unknown as {
       options?: (
         actionId: string,
@@ -746,43 +741,53 @@ export async function registerSlackMonitorSlashCommands(params: {
       ) => void;
     };
     if (typeof appWithOptions.options !== "function") {
-      return;
+      return false;
     }
-    appWithOptions.options(SLACK_COMMAND_ARG_ACTION_ID, async ({ ack, body }) => {
-      const typedBody = body as {
-        value?: string;
-        user?: { id?: string };
-        actions?: Array<{ block_id?: string }>;
-        block_id?: string;
-      };
-      const blockId = typedBody.actions?.[0]?.block_id ?? typedBody.block_id;
-      const token = readSlackExternalArgMenuToken(blockId);
-      if (!token) {
-        await ack({ options: [] });
-        return;
-      }
-      const entry = slackExternalArgMenuStore.get(token);
-      if (!entry) {
-        await ack({ options: [] });
-        return;
-      }
-      const requesterUserId = typedBody.user?.id?.trim();
-      if (!requesterUserId || requesterUserId !== entry.userId) {
-        await ack({ options: [] });
-        return;
-      }
-      const query = typedBody.value?.trim().toLowerCase() ?? "";
-      const options = entry.choices
-        .filter((choice) => !query || choice.label.toLowerCase().includes(query))
-        .slice(0, SLACK_COMMAND_ARG_SELECT_OPTIONS_MAX)
-        .map((choice) => ({
-          text: { type: "plain_text", text: choice.label.slice(0, 75) },
-          value: choice.value,
-        }));
-      await ack({ options });
-    });
+    try {
+      appWithOptions.options(SLACK_COMMAND_ARG_ACTION_ID, async ({ ack, body }) => {
+        const typedBody = body as {
+          value?: string;
+          user?: { id?: string };
+          actions?: Array<{ block_id?: string }>;
+          block_id?: string;
+        };
+        pruneSlackExternalArgMenuStore();
+        const blockId = typedBody.actions?.[0]?.block_id ?? typedBody.block_id;
+        const token = readSlackExternalArgMenuToken(blockId);
+        if (!token) {
+          await ack({ options: [] });
+          return;
+        }
+        const entry = slackExternalArgMenuStore.get(token);
+        if (!entry) {
+          await ack({ options: [] });
+          return;
+        }
+        if (typedBody.user?.id && typedBody.user.id !== entry.userId) {
+          await ack({ options: [] });
+          return;
+        }
+        const query = typedBody.value?.trim().toLowerCase() ?? "";
+        const options = entry.choices
+          .filter((choice) => !query || choice.label.toLowerCase().includes(query))
+          .slice(0, SLACK_COMMAND_ARG_SELECT_OPTIONS_MAX)
+          .map((choice) => ({
+            text: { type: "plain_text", text: choice.label.slice(0, 75) },
+            value: choice.value,
+          }));
+        await ack({ options });
+      });
+      return true;
+    } catch (err) {
+      runtime.error?.(
+        danger(
+          `slack arg-menu options registration failed; external arg menus disabled. ${String(err)}`,
+        ),
+      );
+      return false;
+    }
   };
-  registerArgOptions();
+  supportsExternalArgMenus = registerArgOptions();
 
   const registerArgAction = (actionId: string) => {
     (
@@ -844,7 +849,7 @@ export async function registerSlackMonitorSlashCommands(params: {
         user_name: userName,
         channel_id: body.channel?.id ?? "",
         channel_name: body.channel?.name ?? body.channel?.id ?? "",
-        trigger_id: triggerId,
+        trigger_id: triggerId ?? String(Date.now()),
       } as SlackCommandMiddlewareArgs["command"];
       await handleSlashCommand({
         command: commandPayload,

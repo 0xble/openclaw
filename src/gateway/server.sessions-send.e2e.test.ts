@@ -1,11 +1,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it, type Mock } from "vitest";
+import { WebSocket } from "ws";
 import { resolveSessionTranscriptPath } from "../config/sessions.js";
 import { emitAgentEvent } from "../infra/agent-events.js";
 import { captureEnv } from "../test-utils/env.js";
 import {
   agentCommand,
+  connectReq,
   getFreePort,
   installGatewayTestHooks,
   startGatewayServer,
@@ -28,6 +30,14 @@ beforeAll(async () => {
   process.env.OPENCLAW_GATEWAY_PORT = String(gatewayPort);
   process.env.OPENCLAW_GATEWAY_TOKEN = gatewayToken;
   server = await startGatewayServer(gatewayPort);
+  const pairWs = new WebSocket(`ws://127.0.0.1:${gatewayPort}`);
+  await new Promise<void>((resolve) => pairWs.once("open", resolve));
+  const pairRes = await connectReq(pairWs, {
+    token: gatewayToken,
+    scopes: ["operator.admin", "operator.write"],
+  });
+  expect(pairRes.ok).toBe(true);
+  pairWs.close();
 });
 
 afterAll(async () => {

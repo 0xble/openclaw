@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { stripAnsi } from "../terminal/ansi.js";
 import { formatHealthCheckFailure } from "./health-format.js";
 import type { HealthSummary } from "./health.js";
-import { formatHealthChannelLines, healthCommand } from "./health.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
 
 const runtime = {
   log: vi.fn(),
@@ -52,9 +55,13 @@ const createHealthSummary = (params: {
 };
 
 const callGatewayMock = vi.fn();
-vi.mock("../gateway/call.js", () => ({
-  callGateway: (...args: unknown[]) => callGatewayMock(...args),
-}));
+vi.mock("../gateway/call.js", async () => {
+  const actual = await vi.importActual<typeof import("../gateway/call.js")>("../gateway/call.js");
+  return {
+    ...actual,
+    callGateway: (...args: unknown[]) => callGatewayMock(...args),
+  };
+});
 
 describe("healthCommand", () => {
   beforeEach(() => {
@@ -62,6 +69,7 @@ describe("healthCommand", () => {
   });
 
   it("outputs JSON from gateway", async () => {
+    const { healthCommand } = await import("./health.js");
     const agentSessions = {
       path: "/tmp/sessions.json",
       count: 1,
@@ -98,6 +106,7 @@ describe("healthCommand", () => {
   });
 
   it("prints text summary when not json", async () => {
+    const { healthCommand } = await import("./health.js");
     callGatewayMock.mockResolvedValueOnce(
       createHealthSummary({
         channels: {
@@ -120,7 +129,8 @@ describe("healthCommand", () => {
     expect(runtime.log).toHaveBeenCalled();
   });
 
-  it("formats per-account probe timings", () => {
+  it("formats per-account probe timings", async () => {
+    const { formatHealthChannelLines } = await import("./health.js");
     const summary = createHealthSummary({
       channels: {
         telegram: {

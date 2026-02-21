@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import path from "node:path";
 import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { generateSecureToken } from "../../infra/secure-random.js";
 import { getGlobalHookRunner } from "../../plugins/hook-runner-global.js";
@@ -186,6 +187,39 @@ function resolveActiveErrorContext(params: {
   };
 }
 
+async function appendPromptErrorEntry(params: {
+  sessionFile?: string;
+  runId: string;
+  sessionId: string;
+  provider: string;
+  model: string;
+  api: string;
+  error: string;
+}) {
+  if (!params.sessionFile) {
+    return;
+  }
+  try {
+    await fs.mkdir(path.dirname(params.sessionFile), { recursive: true });
+    const promptErrorEntry = {
+      type: "custom",
+      customType: "openclaw:prompt-error",
+      data: {
+        timestamp: Date.now(),
+        runId: params.runId,
+        sessionId: params.sessionId,
+        provider: params.provider,
+        model: params.model,
+        api: params.api,
+        error: params.error,
+      },
+    };
+    await fs.appendFile(params.sessionFile, `${JSON.stringify(promptErrorEntry)}\n`);
+  } catch {
+    // ignore failures to write diagnostics
+  }
+}
+
 export async function runEmbeddedPiAgent(
   params: RunEmbeddedPiAgentParams,
 ): Promise<EmbeddedPiRunResult> {
@@ -214,6 +248,11 @@ export async function runEmbeddedPiAgent(
         agentId: params.agentId,
         config: params.config,
       });
+      if (params.sessionFile) {
+        await fs.mkdir(path.dirname(params.sessionFile), { recursive: true });
+        const handle = await fs.open(params.sessionFile, "a");
+        await handle.close();
+      }
       const resolvedWorkspace = workspaceResolution.workspaceDir;
       const redactedSessionId = redactRunIdentifier(params.sessionId);
       const redactedSessionKey = redactRunIdentifier(params.sessionKey);
@@ -662,7 +701,11 @@ export async function runEmbeddedPiAgent(
                 `diagId=${overflowDiagId} compactionAttempts=${overflowCompactionAttempts} ` +
                 `error=${errorText.slice(0, 200)}`,
             );
-            const isCompactionFailure = isCompactionFailureError(errorText);
+            const lowerErrorText = errorText.toLowerCase();
+            const isCompactionFailure =
+              isCompactionFailureError(errorText) ||
+              (lowerErrorText.includes("request_too_large") &&
+                lowerErrorText.includes("summarization failed"));
             const hadAttemptLevelCompaction = attemptCompactionCount > 0;
             // If this attempt already compacted (SDK auto-compaction), avoid immediately
             // running another explicit compaction for the same overflow trigger.
@@ -907,6 +950,15 @@ export async function runEmbeddedPiAgent(
                 status: resolveFailoverStatus(promptFailoverReason ?? "unknown"),
               });
             }
+            await appendPromptErrorEntry({
+              sessionFile: params.sessionFile,
+              runId: params.runId,
+              sessionId: params.sessionId,
+              provider,
+              model: modelId,
+              api: model.api,
+              error: errorText,
+            });
             throw promptError;
           }
 
@@ -1127,6 +1179,39 @@ export async function runEmbeddedPiAgent(
             successfulCronAdds: attempt.successfulCronAdds,
           };
         }
+      } catch (err) {
+        if (err instanceof FailoverError) {
+          throw err;
+        }
+        const errorText = describeUnknownError(err);
+        await appendPromptErrorEntry({
+          sessionFile: params.sessionFile,
+          runId: params.runId,
+          sessionId: params.sessionId,
+          provider,
+          model: modelId,
+          api: model.api,
+          error: errorText,
+        });
+        const errorResult: EmbeddedPiRunResult = {
+          payloads: [
+            {
+              text: errorText,
+              isError: true,
+            },
+          ],
+          meta: {
+            durationMs: Date.now() - started,
+            agentMeta: {
+              sessionId: params.sessionId,
+              provider,
+              model: modelId,
+            },
+            systemPromptReport: undefined,
+            error: { kind: "prompt_error", message: errorText },
+          },
+        };
+        return errorResult;
       } finally {
         process.chdir(prevCwd);
       }

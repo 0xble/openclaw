@@ -924,7 +924,6 @@ export async function loadAndMaybeMigrateDoctorConfig(params: {
   if (shouldRepair && pendingChanges) {
     shouldWriteConfig = true;
   }
-
   noteOpencodeProviderOverrides(cfg);
 
   return {

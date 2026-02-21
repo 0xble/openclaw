@@ -85,6 +85,7 @@ export function installTestEnv(): { cleanup: () => void; tempHome: string } {
     { key: "SLACK_BOT_TOKEN", value: process.env.SLACK_BOT_TOKEN },
     { key: "SLACK_APP_TOKEN", value: process.env.SLACK_APP_TOKEN },
     { key: "SLACK_USER_TOKEN", value: process.env.SLACK_USER_TOKEN },
+    { key: "OPENAI_API_KEY", value: process.env.OPENAI_API_KEY },
     { key: "COPILOT_GITHUB_TOKEN", value: process.env.COPILOT_GITHUB_TOKEN },
     { key: "GH_TOKEN", value: process.env.GH_TOKEN },
     { key: "GITHUB_TOKEN", value: process.env.GITHUB_TOKEN },
@@ -114,6 +115,7 @@ export function installTestEnv(): { cleanup: () => void; tempHome: string } {
   delete process.env.SLACK_BOT_TOKEN;
   delete process.env.SLACK_APP_TOKEN;
   delete process.env.SLACK_USER_TOKEN;
+  delete process.env.OPENAI_API_KEY;
   delete process.env.COPILOT_GITHUB_TOKEN;
   delete process.env.GH_TOKEN;
   delete process.env.GITHUB_TOKEN;

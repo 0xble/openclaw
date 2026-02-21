@@ -2,8 +2,8 @@ import { normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import { getMatrixRuntime } from "../../runtime.js";
 import type { CoreConfig } from "../../types.js";
 import { getActiveMatrixClient } from "../active-client.js";
-import { createPreparedMatrixClient } from "../client-bootstrap.js";
-import { isBunRuntime, resolveMatrixAuth, resolveSharedMatrixClient } from "../client.js";
+import { resolveMatrixAuth } from "../client/config.js";
+import { isBunRuntime } from "../client/runtime.js";
 import type { MatrixActionClient, MatrixActionClientOpts } from "./types.js";
 
 export function ensureNodeRuntime() {
@@ -27,6 +27,7 @@ export async function resolveActionClient(
   }
   const shouldShareClient = Boolean(process.env.OPENCLAW_GATEWAY_PORT);
   if (shouldShareClient) {
+    const { resolveSharedMatrixClient } = await import("../client/shared.js");
     const client = await resolveSharedMatrixClient({
       cfg: getMatrixRuntime().config.loadConfig() as CoreConfig,
       timeoutMs: opts.timeoutMs,
@@ -38,6 +39,7 @@ export async function resolveActionClient(
     cfg: getMatrixRuntime().config.loadConfig() as CoreConfig,
     accountId,
   });
+  const { createPreparedMatrixClient } = await import("../client-bootstrap.js");
   const client = await createPreparedMatrixClient({
     auth,
     timeoutMs: opts.timeoutMs,

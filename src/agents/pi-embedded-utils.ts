@@ -417,5 +417,19 @@ export function extractThinkingFromTaggedStream(text: string): string {
 
 export function inferToolMetaFromArgs(toolName: string, args: unknown): string | undefined {
   const display = resolveToolDisplay({ name: toolName, args });
-  return formatToolDetail(display);
+  const detail = formatToolDetail(display);
+  const actionValue =
+    args && typeof args === "object" ? (args as Record<string, unknown>).action : undefined;
+  const hasAction = typeof actionValue === "string" && actionValue.trim().length > 0;
+  const parts: string[] = [];
+  if (hasAction && display.verb) {
+    parts.push(display.verb);
+  }
+  if (detail) {
+    parts.push(detail);
+  }
+  if (parts.length === 0) {
+    return undefined;
+  }
+  return parts.join(" · ");
 }

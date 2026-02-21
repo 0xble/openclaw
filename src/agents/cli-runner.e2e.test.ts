@@ -3,8 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { runCliAgent } from "./cli-runner.js";
-import { resolveCliNoOutputTimeoutMs } from "./cli-runner/helpers.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
 
 const supervisorSpawnMock = vi.fn();
 
@@ -52,6 +54,7 @@ describe("runCliAgent with process supervisor", () => {
   });
 
   it("runs CLI through supervisor and returns payload", async () => {
+    const { runCliAgent } = await import("./cli-runner.js");
     supervisorSpawnMock.mockResolvedValueOnce(
       createManagedRun({
         reason: "exit",
@@ -96,6 +99,7 @@ describe("runCliAgent with process supervisor", () => {
   });
 
   it("fails with timeout when no-output watchdog trips", async () => {
+    const { runCliAgent } = await import("./cli-runner.js");
     supervisorSpawnMock.mockResolvedValueOnce(
       createManagedRun({
         reason: "no-output-timeout",
@@ -125,6 +129,7 @@ describe("runCliAgent with process supervisor", () => {
   });
 
   it("fails with timeout when overall timeout trips", async () => {
+    const { runCliAgent } = await import("./cli-runner.js");
     supervisorSpawnMock.mockResolvedValueOnce(
       createManagedRun({
         reason: "overall-timeout",
@@ -154,6 +159,7 @@ describe("runCliAgent with process supervisor", () => {
   });
 
   it("falls back to per-agent workspace when workspaceDir is missing", async () => {
+    const { runCliAgent } = await import("./cli-runner.js");
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-cli-runner-"));
     const fallbackWorkspace = path.join(tempDir, "workspace-main");
     await fs.mkdir(fallbackWorkspace, { recursive: true });
@@ -201,7 +207,8 @@ describe("runCliAgent with process supervisor", () => {
 });
 
 describe("resolveCliNoOutputTimeoutMs", () => {
-  it("uses backend-configured resume watchdog override", () => {
+  it("uses backend-configured resume watchdog override", async () => {
+    const { resolveCliNoOutputTimeoutMs } = await import("./cli-runner/helpers.js");
     const timeoutMs = resolveCliNoOutputTimeoutMs({
       backend: {
         command: "codex",

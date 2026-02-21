@@ -4,6 +4,10 @@ import { parseCameraSnapPayload, parseCameraClipPayload } from "./nodes-camera.j
 import { IOS_NODE, createIosNodeListResponse } from "./program.nodes-test-helpers.js";
 import { callGateway, installBaseProgramMocks, runTui, runtime } from "./program.test-mocks.js";
 
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 installBaseProgramMocks();
 
 function getFirstRuntimeLogLine(): string {

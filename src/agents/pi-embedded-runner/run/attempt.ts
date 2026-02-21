@@ -1045,6 +1045,11 @@ export async function runEmbeddedAttempt(
           );
         }
 
+        let capturedUnhandledRejection: unknown;
+        const handleUnhandledRejection = (reason: unknown) => {
+          capturedUnhandledRejection = reason;
+        };
+        process.on("unhandledRejection", handleUnhandledRejection);
         try {
           // Detect and load images referenced in the prompt for vision-capable models.
           // This eliminates the need for an explicit "view" tool call by injecting
@@ -1141,6 +1146,11 @@ export async function runEmbeddedAttempt(
           log.debug(
             `embedded run prompt end: runId=${params.runId} sessionId=${params.sessionId} durationMs=${Date.now() - promptStartedAt}`,
           );
+        }
+        process.off("unhandledRejection", handleUnhandledRejection);
+        if (!promptError && capturedUnhandledRejection) {
+          promptError = capturedUnhandledRejection;
+          promptErrorSource = "prompt";
         }
 
         // Capture snapshot before compaction wait so we have complete messages if timeout occurs

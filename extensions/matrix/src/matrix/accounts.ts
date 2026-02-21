@@ -1,6 +1,6 @@
 import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/account-id";
 import type { CoreConfig, MatrixConfig } from "../types.js";
-import { resolveMatrixConfigForAccount } from "./client.js";
+import { resolveMatrixConfigForAccount } from "./client/config.js";
 import { credentialsMatchConfig, loadMatrixCredentials } from "./credentials.js";
 
 /** Merge account config with top-level defaults, preserving nested objects. */

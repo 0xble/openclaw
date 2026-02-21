@@ -2,11 +2,23 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import sharp from "sharp";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import "./test-helpers/fast-coding-tools.js";
 import { createOpenClawCodingTools } from "./pi-tools.js";
 import { createHostSandboxFsBridge } from "./test-helpers/host-sandbox-fs-bridge.js";
 import { createPiToolsSandboxContext } from "./test-helpers/pi-tools-sandbox-context.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
+vi.mock("./channel-tools.js", async () => {
+  const actual = await vi.importActual<typeof import("./channel-tools.js")>("./channel-tools.js");
+  return {
+    ...actual,
+    listChannelAgentTools: () => [],
+  };
+});
 
 const defaultTools = createOpenClawCodingTools();
 

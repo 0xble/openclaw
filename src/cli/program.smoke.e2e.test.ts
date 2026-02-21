@@ -1,4 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 import {
   configureCommand,
   ensureConfigReady,

@@ -3,8 +3,8 @@ import { DEFAULT_ACCOUNT_ID, normalizeAccountId } from "openclaw/plugin-sdk/acco
 import { getMatrixRuntime } from "../../runtime.js";
 import type { CoreConfig } from "../../types.js";
 import { getActiveMatrixClient, getAnyActiveMatrixClient } from "../active-client.js";
-import { createPreparedMatrixClient } from "../client-bootstrap.js";
-import { isBunRuntime, resolveMatrixAuth, resolveSharedMatrixClient } from "../client.js";
+import { resolveMatrixAuth } from "../client/config.js";
+import { isBunRuntime } from "../client/runtime.js";
 
 const getCore = () => getMatrixRuntime();
 
@@ -81,6 +81,7 @@ export async function resolveMatrixClient(opts: {
   }
   const shouldShareClient = Boolean(process.env.OPENCLAW_GATEWAY_PORT);
   if (shouldShareClient) {
+    const { resolveSharedMatrixClient } = await import("../client/shared.js");
     const client = await resolveSharedMatrixClient({
       timeoutMs: opts.timeoutMs,
       accountId,
@@ -88,6 +89,7 @@ export async function resolveMatrixClient(opts: {
     return { client, stopOnDone: false };
   }
   const auth = await resolveMatrixAuth({ accountId });
+  const { createPreparedMatrixClient } = await import("../client-bootstrap.js");
   const client = await createPreparedMatrixClient({
     auth,
     timeoutMs: opts.timeoutMs,

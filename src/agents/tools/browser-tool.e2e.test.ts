@@ -309,7 +309,7 @@ describe("browser tool snapshot labels", () => {
     expect(toolCommonMocks.imageResultFromFile).toHaveBeenCalledWith(
       expect.objectContaining({
         path: "/tmp/snap.png",
-        extraText: expect.stringContaining("<<<EXTERNAL_UNTRUSTED_CONTENT>>>"),
+        extraText: expect.stringMatching(/<<<EXTERNAL_UNTRUSTED_CONTENT\s+id="[a-f0-9]{16}">>>/),
       }),
     );
     expect(result).toEqual(imageResult);
@@ -346,7 +346,7 @@ describe("browser tool external content wrapping", () => {
     const result = await tool.execute?.("call-1", { action: "snapshot", snapshotFormat: "aria" });
     expect(result?.content?.[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("<<<EXTERNAL_UNTRUSTED_CONTENT>>>"),
+      text: expect.stringMatching(/<<<EXTERNAL_UNTRUSTED_CONTENT\s+id="[a-f0-9]{16}">>>/),
     });
     const ariaTextBlock = result?.content?.[0];
     const ariaTextValue =
@@ -380,7 +380,7 @@ describe("browser tool external content wrapping", () => {
     const result = await tool.execute?.("call-1", { action: "tabs" });
     expect(result?.content?.[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("<<<EXTERNAL_UNTRUSTED_CONTENT>>>"),
+      text: expect.stringMatching(/<<<EXTERNAL_UNTRUSTED_CONTENT\s+id="[a-f0-9]{16}">>>/),
     });
     const tabsTextBlock = result?.content?.[0];
     const tabsTextValue =
@@ -413,7 +413,7 @@ describe("browser tool external content wrapping", () => {
     const result = await tool.execute?.("call-1", { action: "console" });
     expect(result?.content?.[0]).toMatchObject({
       type: "text",
-      text: expect.stringContaining("<<<EXTERNAL_UNTRUSTED_CONTENT>>>"),
+      text: expect.stringMatching(/<<<EXTERNAL_UNTRUSTED_CONTENT\s+id="[a-f0-9]{16}">>>/),
     });
     const consoleTextBlock = result?.content?.[0];
     const consoleTextValue =

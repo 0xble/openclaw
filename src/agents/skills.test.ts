@@ -382,6 +382,17 @@ describe("applySkillEnvOverrides", () => {
 
     const snapshot = buildWorkspaceSkillSnapshot(workspaceDir, {
       managedSkillsDir: path.join(workspaceDir, ".managed"),
+      config: {
+        skills: {
+          entries: {
+            "snapshot-env-skill": {
+              env: {
+                OPENAI_API_KEY: "snap-secret",
+              },
+            },
+          },
+        },
+      },
     });
 
     withClearedEnv(["OPENAI_API_KEY"], () => {

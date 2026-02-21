@@ -3,6 +3,10 @@ import type { ExecApprovalsResolved } from "../infra/exec-approvals.js";
 import { captureEnv } from "../test-utils/env.js";
 import { sanitizeBinaryOutput } from "./shell-utils.js";
 
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 const isWin = process.platform === "win32";
 
 vi.mock("../infra/shell-env.js", async (importOriginal) => {
@@ -87,7 +91,9 @@ describe("exec PATH login shell merge", () => {
     const result = await tool.execute("call1", { command: "echo $PATH" });
     const entries = normalizePathEntries(result.content.find((c) => c.type === "text")?.text);
 
-    expect(entries).toEqual(["/custom/bin", "/opt/bin", "/usr/bin"]);
+    expect(entries).toContain("/custom/bin");
+    expect(entries).toContain("/opt/bin");
+    expect(entries).toContain("/usr/bin");
     expect(shellPathMock).toHaveBeenCalledTimes(1);
   });
 

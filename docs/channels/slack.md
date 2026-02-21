@@ -459,6 +459,28 @@ openclaw pairing list slack
     Also check `commands.useAccessGroups` and channel/user allowlists.
 
   </Accordion>
+
+  <Accordion title="Sync native slash commands with Slack CLI credentials">
+    If you run Slack in native command mode (`channels.slack.commands.native: true`), you can sync Slack app slash commands from the OpenClaw command set.
+
+    1. Authenticate Slack CLI with an app-configuration token (`xoxe...`) that has:
+       - `app_configurations:read`
+       - `app_configurations:write`
+    2. Run:
+
+```bash
+~/.slack/bin/slack auth login --team <TEAM_ID> --token <XOXE_APP_CONFIG_TOKEN>
+pnpm slack:sync-native-commands --team-id <TEAM_ID> --app-id <APP_ID> --mode recommended --apply
+```
+
+    Notes:
+    - dry run (no update): omit `--apply`
+    - inspect payload only: `pnpm slack:sync-native-commands --manifest-only`
+    - sync full native set: use `--mode all`
+    - manifest sync ensures bot scope `commands` is present
+    - Slack may reject reserved slash names (for example `/status`); rejected names are auto-skipped and printed
+
+  </Accordion>
 </AccordionGroup>
 
 ## Text streaming

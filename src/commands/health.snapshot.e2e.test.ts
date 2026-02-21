@@ -6,7 +6,10 @@ import { telegramPlugin } from "../../extensions/telegram/src/channel.js";
 import { setActivePluginRegistry } from "../plugins/runtime.js";
 import { createTestRegistry } from "../test-utils/channel-plugins.js";
 import type { HealthSummary } from "./health.js";
-import { getHealthSnapshot } from "./health.js";
+
+vi.hoisted(() => {
+  vi.resetModules();
+});
 
 let testConfig: Record<string, unknown> = {};
 let testStore: Record<string, { updatedAt?: number }> = {};
@@ -19,21 +22,29 @@ vi.mock("../config/config.js", async (importOriginal) => {
   };
 });
 
-vi.mock("../config/sessions.js", () => ({
-  resolveStorePath: () => "/tmp/sessions.json",
-  loadSessionStore: () => testStore,
-  readSessionUpdatedAt: vi.fn(() => undefined),
-  recordSessionMetaFromInbound: vi.fn().mockResolvedValue(undefined),
-  updateLastRoute: vi.fn().mockResolvedValue(undefined),
-}));
+vi.mock("../config/sessions.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../config/sessions.js")>();
+  return {
+    ...actual,
+    resolveStorePath: () => "/tmp/sessions.json",
+    loadSessionStore: () => testStore,
+    readSessionUpdatedAt: vi.fn(() => undefined),
+    recordSessionMetaFromInbound: vi.fn().mockResolvedValue(undefined),
+    updateLastRoute: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
-vi.mock("../web/auth-store.js", () => ({
-  webAuthExists: vi.fn(async () => true),
-  getWebAuthAgeMs: vi.fn(() => 1234),
-  readWebSelfId: vi.fn(() => ({ e164: null, jid: null })),
-  logWebSelfId: vi.fn(),
-  logoutWeb: vi.fn(),
-}));
+vi.mock("../web/auth-store.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../web/auth-store.js")>();
+  return {
+    ...actual,
+    webAuthExists: vi.fn(async () => true),
+    getWebAuthAgeMs: vi.fn(() => 1234),
+    readWebSelfId: vi.fn(() => ({ e164: null, jid: null })),
+    logWebSelfId: vi.fn(),
+    logoutWeb: vi.fn(),
+  };
+});
 
 function stubTelegramFetchOk(calls: string[]) {
   vi.stubGlobal(
@@ -72,6 +83,13 @@ function stubTelegramFetchOk(calls: string[]) {
   );
 }
 
+async function getHealthSnapshotForTest(
+  opts: Parameters<(typeof import("./health.js"))["getHealthSnapshot"]>[0],
+) {
+  const { getHealthSnapshot } = await import("./health.js");
+  return getHealthSnapshot(opts);
+}
+
 async function runSuccessfulTelegramProbe(
   config: Record<string, unknown>,
   options?: { clearTokenEnv?: boolean },
@@ -86,7 +104,7 @@ async function runSuccessfulTelegramProbe(
   const calls: string[] = [];
   stubTelegramFetchOk(calls);
 
-  const snap = await getHealthSnapshot({ timeoutMs: 25 });
+  const snap = await getHealthSnapshotForTest({ timeoutMs: 25 });
   const telegram = snap.channels.telegram as {
     configured?: boolean;
     probe?: {
@@ -130,7 +148,7 @@ describe("getHealthSnapshot", () => {
     };
     vi.stubEnv("TELEGRAM_BOT_TOKEN", "");
     vi.stubEnv("DISCORD_BOT_TOKEN", "");
-    const snap = (await getHealthSnapshot({
+    const snap = (await getHealthSnapshotForTest({
       timeoutMs: 10,
     })) satisfies HealthSummary;
     expect(snap.ok).toBe(true);
@@ -190,7 +208,7 @@ describe("getHealthSnapshot", () => {
       }),
     );
 
-    const snap = await getHealthSnapshot({ timeoutMs: 25 });
+    const snap = await getHealthSnapshotForTest({ timeoutMs: 25 });
     const telegram = snap.channels.telegram as {
       configured?: boolean;
       probe?: { ok?: boolean; status?: number; error?: string };
@@ -213,7 +231,7 @@ describe("getHealthSnapshot", () => {
       }),
     );
 
-    const snap = await getHealthSnapshot({ timeoutMs: 25 });
+    const snap = await getHealthSnapshotForTest({ timeoutMs: 25 });
     const telegram = snap.channels.telegram as {
       configured?: boolean;
       probe?: { ok?: boolean; error?: string };
@@ -240,7 +258,7 @@ describe("getHealthSnapshot", () => {
     };
     testStore = {};
 
-    const snap = await getHealthSnapshot({ timeoutMs: 10, probe: false });
+    const snap = await getHealthSnapshotForTest({ timeoutMs: 10, probe: false });
     const byAgent = new Map(snap.agents.map((agent) => [agent.agentId, agent] as const));
     const main = byAgent.get("main");
     const ops = byAgent.get("ops");

@@ -4,6 +4,10 @@ import type { OpenClawConfig } from "../config/config.js";
 import type { SessionEntry } from "../config/sessions.js";
 import type { RuntimeEnv } from "../runtime.js";
 
+vi.hoisted(() => {
+  vi.resetModules();
+});
+
 const mocks = vi.hoisted(() => ({
   deliverOutboundPayloads: vi.fn(async () => []),
   getChannelPlugin: vi.fn(() => ({})),

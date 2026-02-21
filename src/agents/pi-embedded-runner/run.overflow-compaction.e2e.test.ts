@@ -288,7 +288,11 @@ describe("overflow compaction in run loop", () => {
       }),
     );
 
-    await expect(runEmbeddedPiAgent(baseParams)).rejects.toThrow("transport disconnected");
+    const result = await runEmbeddedPiAgent(baseParams);
+
+    expect(result.meta.error?.kind).toBe("prompt_error");
+    expect(result.payloads?.[0]?.isError).toBe(true);
+    expect(result.payloads?.[0]?.text).toContain("transport disconnected");
 
     expect(mockedCompactDirect).not.toHaveBeenCalled();
     expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining("source=assistantError"));
