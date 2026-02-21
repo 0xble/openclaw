@@ -22,7 +22,8 @@ Troubleshooting: [/automation/troubleshooting](/automation/troubleshooting)
 ## TL;DR
 
 - Cron runs **inside the Gateway** (not inside the model).
-- Jobs persist under `~/.openclaw/cron/` so restarts don’t lose schedules.
+- Jobs persist in `~/dotfiles/private_dot_openclaw/private_cron/` when available, and
+  otherwise under `~/.openclaw/cron/`, so restarts don’t lose schedules.
 - Two execution styles:
   - **Main session**: enqueue a system event, then run on the next heartbeat.
   - **Isolated**: run a dedicated agent turn in `cron:<jobId>`, with delivery (announce by default or none).
@@ -68,10 +69,13 @@ For the canonical JSON shapes and examples, see [JSON schema for tool calls](/au
 
 ## Where cron jobs are stored
 
-Cron jobs are persisted on the Gateway host at `~/.openclaw/cron/jobs.json` by default.
-The Gateway loads the file into memory and writes it back on changes, so manual edits
-are only safe when the Gateway is stopped. Prefer `openclaw cron add/edit` or the cron
-tool call API for changes.
+Cron jobs are persisted on the Gateway host in dotfiles at
+`~/dotfiles/private_dot_openclaw/private_cron/jobs.json` when the dotfiles path exists
+(or when `OPENCLAW_CRON_DOTFILES_STORE_PATH` is set). Otherwise, OpenClaw falls back to
+`~/.openclaw/cron/jobs.json`.
+The Gateway loads the file into memory and writes it back on changes, so manual edits are
+only safe when the Gateway is stopped. Prefer `openclaw cron add/edit` or the cron tool
+call API for changes.
 
 ## Beginner-friendly overview
 
@@ -348,7 +352,8 @@ Notes:
 
 ## Storage & history
 
-- Job store: `~/.openclaw/cron/jobs.json` (Gateway-managed JSON).
+- Job store: `~/dotfiles/private_dot_openclaw/private_cron/jobs.json` when available,
+  otherwise `~/.openclaw/cron/jobs.json` (Gateway-managed JSON).
 - Run history: `~/.openclaw/cron/runs/<jobId>.jsonl` (JSONL, auto-pruned).
 - Override store path: `cron.store` in config.
 
@@ -358,7 +363,7 @@ Notes:
 {
   cron: {
     enabled: true, // default true
-    store: "~/.openclaw/cron/jobs.json",
+    store: "~/dotfiles/private_dot_openclaw/private_cron/jobs.json",
     maxConcurrentRuns: 1, // default 1
     webhook: "https://example.invalid/legacy", // deprecated fallback for stored notify:true jobs
     webhookToken: "replace-with-dedicated-webhook-token", // optional bearer token for webhook mode

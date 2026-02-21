@@ -1,8 +1,14 @@
+import fsSync from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadCronStore, resolveCronStorePath } from "./store.js";
+import {
+  DEFAULT_CRON_STORE_PATH,
+  DEFAULT_DOTFILES_CRON_STORE_PATH,
+  loadCronStore,
+  resolveCronStorePath,
+} from "./store.js";
 
 async function makeStorePath() {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-cron-store-"));
@@ -17,6 +23,7 @@ async function makeStorePath() {
 
 describe("resolveCronStorePath", () => {
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
@@ -26,6 +33,29 @@ describe("resolveCronStorePath", () => {
 
     const result = resolveCronStorePath("~/cron/jobs.json");
     expect(result).toBe(path.resolve("/srv/openclaw-home", "cron", "jobs.json"));
+  });
+
+  it("uses OPENCLAW_CRON_DOTFILES_STORE_PATH when set", () => {
+    vi.stubEnv("OPENCLAW_CRON_DOTFILES_STORE_PATH", "~/dotfiles/custom/jobs.json");
+    vi.stubEnv("OPENCLAW_HOME", "/srv/openclaw-home");
+
+    const result = resolveCronStorePath();
+    expect(result).toBe(path.resolve("/srv/openclaw-home", "dotfiles", "custom", "jobs.json"));
+  });
+
+  it("uses dotfiles cron store when dotfiles path exists", () => {
+    const existsSync = vi.spyOn(fsSync, "existsSync").mockReturnValue(true);
+
+    const result = resolveCronStorePath(undefined, {});
+    expect(existsSync).toHaveBeenCalled();
+    expect(result).toBe(DEFAULT_DOTFILES_CRON_STORE_PATH);
+  });
+
+  it("falls back to ~/.openclaw cron store when dotfiles path is missing", () => {
+    vi.spyOn(fsSync, "existsSync").mockReturnValue(false);
+
+    const result = resolveCronStorePath(undefined, {});
+    expect(result).toBe(DEFAULT_CRON_STORE_PATH);
   });
 });
 

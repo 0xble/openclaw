@@ -7,16 +7,36 @@ import type { CronStoreFile } from "./types.js";
 
 export const DEFAULT_CRON_DIR = path.join(CONFIG_DIR, "cron");
 export const DEFAULT_CRON_STORE_PATH = path.join(DEFAULT_CRON_DIR, "jobs.json");
+export const DEFAULT_DOTFILES_CRON_STORE_PATH = path.resolve(
+  expandHomePrefix("~/dotfiles/private_dot_openclaw/private_cron/jobs.json"),
+);
 
-export function resolveCronStorePath(storePath?: string) {
-  if (storePath?.trim()) {
-    const raw = storePath.trim();
-    if (raw.startsWith("~")) {
-      return path.resolve(expandHomePrefix(raw));
-    }
-    return path.resolve(raw);
+function resolvePath(rawPath: string) {
+  if (rawPath.startsWith("~")) {
+    return path.resolve(expandHomePrefix(rawPath));
   }
+  return path.resolve(rawPath);
+}
+
+function resolveDefaultCronStorePath(env: NodeJS.ProcessEnv) {
+  const explicitDotfilesPath = env.OPENCLAW_CRON_DOTFILES_STORE_PATH?.trim();
+  if (explicitDotfilesPath) {
+    return resolvePath(explicitDotfilesPath);
+  }
+
+  const dotfilesDir = path.dirname(DEFAULT_DOTFILES_CRON_STORE_PATH);
+  if (fs.existsSync(dotfilesDir)) {
+    return DEFAULT_DOTFILES_CRON_STORE_PATH;
+  }
+
   return DEFAULT_CRON_STORE_PATH;
+}
+
+export function resolveCronStorePath(storePath?: string, env: NodeJS.ProcessEnv = process.env) {
+  if (storePath?.trim()) {
+    return resolvePath(storePath.trim());
+  }
+  return resolveDefaultCronStorePath(env);
 }
 
 export async function loadCronStore(storePath: string): Promise<CronStoreFile> {

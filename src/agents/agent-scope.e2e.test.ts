@@ -51,6 +51,7 @@ describe("resolveAgentConfig", () => {
       workspace: "~/openclaw",
       agentDir: "~/.openclaw/agents/main",
       model: "anthropic/claude-opus-4",
+      thinkingDefault: undefined,
       identity: undefined,
       groupChat: undefined,
       subagents: undefined,
@@ -167,6 +168,17 @@ describe("resolveAgentConfig", () => {
         hasSessionModelOverride: true,
       }),
     ).toEqual([]);
+  });
+
+  it("returns per-agent thinkingDefault when configured", () => {
+    const cfg: OpenClawConfig = {
+      agents: {
+        defaults: { thinkingDefault: "medium" },
+        list: [{ id: "slack", thinkingDefault: "high" }],
+      },
+    };
+
+    expect(resolveAgentConfig(cfg, "slack")?.thinkingDefault).toBe("high");
   });
 
   it("should return agent-specific sandbox config", () => {

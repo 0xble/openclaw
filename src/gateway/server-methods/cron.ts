@@ -15,6 +15,7 @@ import {
   validateCronUpdateParams,
   validateWakeParams,
 } from "../protocol/index.js";
+import { maybeWriteCronStoreThroughDotfiles } from "./cron-write-through.js";
 import type { GatewayRequestHandlers } from "./types.js";
 
 export const cronHandlers: GatewayRequestHandlers = {
@@ -94,6 +95,7 @@ export const cronHandlers: GatewayRequestHandlers = {
       return;
     }
     const job = await context.cron.add(jobCreate);
+    await maybeWriteCronStoreThroughDotfiles(context.cronStorePath);
     respond(true, job, undefined);
   },
   "cron.update": async ({ params, respond, context }) => {
@@ -140,6 +142,7 @@ export const cronHandlers: GatewayRequestHandlers = {
       }
     }
     const job = await context.cron.update(jobId, patch);
+    await maybeWriteCronStoreThroughDotfiles(context.cronStorePath);
     respond(true, job, undefined);
   },
   "cron.remove": async ({ params, respond, context }) => {
@@ -165,6 +168,7 @@ export const cronHandlers: GatewayRequestHandlers = {
       return;
     }
     const result = await context.cron.remove(jobId);
+    await maybeWriteCronStoreThroughDotfiles(context.cronStorePath);
     respond(true, result, undefined);
   },
   "cron.run": async ({ params, respond, context }) => {

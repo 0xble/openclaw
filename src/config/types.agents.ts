@@ -25,6 +25,8 @@ export type AgentConfig = {
   workspace?: string;
   agentDir?: string;
   model?: AgentModelConfig;
+  /** Optional per-agent default thinking level for new turns in this agent's sessions. */
+  thinkingDefault?: AgentDefaultsConfig["thinkingDefault"];
   /** Optional allowlist of skills for this agent (omit = all skills; empty = none). */
   skills?: string[];
   memorySearch?: MemorySearchConfig;
