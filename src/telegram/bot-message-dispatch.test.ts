@@ -7,6 +7,7 @@ const createTelegramDraftStream = vi.hoisted(() => vi.fn());
 const dispatchReplyWithBufferedBlockDispatcher = vi.hoisted(() => vi.fn());
 const deliverReplies = vi.hoisted(() => vi.fn());
 const editMessageTelegram = vi.hoisted(() => vi.fn());
+const renameForumTopicTelegram = vi.hoisted(() => vi.fn());
 const loadSessionStore = vi.hoisted(() => vi.fn());
 const resolveStorePath = vi.hoisted(() => vi.fn(() => "/tmp/sessions.json"));
 
@@ -24,6 +25,7 @@ vi.mock("./bot/delivery.js", () => ({
 
 vi.mock("./send.js", () => ({
   editMessageTelegram,
+  renameForumTopicTelegram,
 }));
 
 vi.mock("../config/sessions.js", async () => ({
@@ -46,6 +48,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     dispatchReplyWithBufferedBlockDispatcher.mockClear();
     deliverReplies.mockClear();
     editMessageTelegram.mockClear();
+    renameForumTopicTelegram.mockClear();
     loadSessionStore.mockClear();
     resolveStorePath.mockClear();
     resolveStorePath.mockReturnValue("/tmp/sessions.json");
@@ -1411,5 +1414,102 @@ describe("dispatchTelegramMessage draft streaming", () => {
 
     expect(draftA.clear).toHaveBeenCalledTimes(1);
     expect(draftB.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("renames telegram forum topics after first successful response", async () => {
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({ text: "Done" }, { kind: "final" });
+      return { queuedFinal: true };
+    });
+    deliverReplies.mockResolvedValue({ delivered: true });
+    renameForumTopicTelegram.mockResolvedValue({
+      ok: true,
+    });
+
+    await dispatchWithContext({
+      context: createContext({
+        chatId: -1001234567890,
+        isGroup: true,
+        resolvedThreadId: 99,
+        threadSpec: { id: 99, scope: "forum" },
+        msg: {
+          chat: { id: -1001234567890, type: "supergroup" },
+          message_id: 456,
+          message_thread_id: 99,
+          text: "Rename this topic",
+        } as never,
+        ctxPayload: {
+          BodyForAgent: "Rename this topic",
+        } as never,
+      }),
+    });
+
+    expect(renameForumTopicTelegram).toHaveBeenCalledWith(
+      "-1001234567890",
+      99,
+      "Rename this topic",
+      expect.objectContaining({
+        accountId: "default",
+        token: "token",
+      }),
+    );
+  });
+
+  it("skips forum rename for slash command starter text", async () => {
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({ text: "Done" }, { kind: "final" });
+      return { queuedFinal: true };
+    });
+    deliverReplies.mockResolvedValue({ delivered: true });
+
+    await dispatchWithContext({
+      context: createContext({
+        chatId: -1001234567890,
+        isGroup: true,
+        resolvedThreadId: 99,
+        threadSpec: { id: 99, scope: "forum" },
+        msg: {
+          chat: { id: -1001234567890, type: "supergroup" },
+          message_id: 456,
+          message_thread_id: 99,
+          text: "/t high",
+        } as never,
+        ctxPayload: {
+          BodyForAgent: "/t high",
+          CommandBody: "/t high",
+        } as never,
+      }),
+    });
+
+    expect(renameForumTopicTelegram).not.toHaveBeenCalled();
+  });
+
+  it("skips forum rename for placeholder-only starter text", async () => {
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({ text: "Done" }, { kind: "final" });
+      return { queuedFinal: true };
+    });
+    deliverReplies.mockResolvedValue({ delivered: true });
+
+    await dispatchWithContext({
+      context: createContext({
+        chatId: -1001234567890,
+        isGroup: true,
+        resolvedThreadId: 99,
+        threadSpec: { id: 99, scope: "forum" },
+        msg: {
+          chat: { id: -1001234567890, type: "supergroup" },
+          message_id: 456,
+          message_thread_id: 99,
+          text: undefined,
+        } as never,
+        ctxPayload: {
+          BodyForAgent: "<media:image>",
+          CommandBody: "<media:image>",
+        } as never,
+      }),
+    });
+
+    expect(renameForumTopicTelegram).not.toHaveBeenCalled();
   });
 });

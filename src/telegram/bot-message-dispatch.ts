@@ -11,6 +11,7 @@ import { clearHistoryEntriesIfEnabled } from "../auto-reply/reply/history.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
 import type { ReplyPayload } from "../auto-reply/types.js";
 import { removeAckReactionAfterReply } from "../channels/ack-reactions.js";
+import { deriveConversationTitle } from "../channels/conversation-title.js";
 import { logAckFailure, logTypingFailure } from "../channels/logging.js";
 import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
 import { createTypingCallbacks } from "../channels/typing.js";
@@ -31,10 +32,28 @@ import {
   createTelegramReasoningStepState,
   splitTelegramReasoningText,
 } from "./reasoning-lane-coordinator.js";
-import { editMessageTelegram } from "./send.js";
+import { editMessageTelegram, renameForumTopicTelegram } from "./send.js";
 import { cacheSticker, describeStickerImage } from "./sticker-cache.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
+const MAX_RENAMED_FORUM_TOPICS = 5_000;
+const renamedForumTopics = new Map<string, number>();
+
+function hasRenamedForumTopic(key: string) {
+  return renamedForumTopics.has(key);
+}
+
+function rememberRenamedForumTopic(key: string) {
+  renamedForumTopics.delete(key);
+  renamedForumTopics.set(key, Date.now());
+  if (renamedForumTopics.size <= MAX_RENAMED_FORUM_TOPICS) {
+    return;
+  }
+  const oldestKey = renamedForumTopics.keys().next().value;
+  if (oldestKey) {
+    renamedForumTopics.delete(oldestKey);
+  }
+}
 
 /** Minimum chars before sending first streaming message (improves push notification UX) */
 const DRAFT_MIN_INITIAL_CHARS = 30;
@@ -840,5 +859,32 @@ export const dispatchTelegramMessage = async ({
       },
     });
   }
+
+  const forumTopicId = threadSpec.scope === "forum" ? threadSpec.id : undefined;
+  const forumTopicKey =
+    typeof forumTopicId === "number" ? `${String(chatId)}:${String(forumTopicId)}` : undefined;
+  if (typeof forumTopicId === "number" && forumTopicKey && !hasRenamedForumTopic(forumTopicKey)) {
+    const topicName = deriveConversationTitle({
+      primaryText:
+        typeof ctxPayload.BodyForAgent === "string" ? ctxPayload.BodyForAgent : undefined,
+      fallbackText: typeof ctxPayload.CommandBody === "string" ? ctxPayload.CommandBody : msg.text,
+      maxChars: 128,
+    });
+    if (topicName) {
+      try {
+        await renameForumTopicTelegram(String(chatId), forumTopicId, topicName, {
+          token: opts.token,
+          accountId: route.accountId,
+          api: bot.api,
+        });
+        rememberRenamedForumTopic(forumTopicKey);
+      } catch (err) {
+        logVerbose(
+          `telegram: forum topic rename failed for ${String(chatId)}:${String(forumTopicId)}: ${String(err)}`,
+        );
+      }
+    }
+  }
+
   clearGroupHistory();
 };

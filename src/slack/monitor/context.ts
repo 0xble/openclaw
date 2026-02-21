@@ -109,6 +109,11 @@ export type SlackMonitorContext = {
     threadTs?: string;
     status: string;
   }) => Promise<void>;
+  setSlackThreadTitle: (params: {
+    channelId: string;
+    threadTs?: string;
+    title?: string;
+  }) => Promise<void>;
 };
 
 export function createSlackMonitorContext(params: {
@@ -160,6 +165,7 @@ export function createSlackMonitorContext(params: {
   >();
   const userCache = new Map<string, { name?: string }>();
   const seenMessages = createDedupeCache({ ttlMs: 60_000, maxSize: 500 });
+  const titledThreads = new Map<string, number>();
 
   const allowFrom = normalizeAllowList(params.allowFrom);
   const groupDmChannels = normalizeAllowList(params.groupDmChannels);
@@ -280,6 +286,54 @@ export function createSlackMonitorContext(params: {
       }
     } catch (err) {
       logVerbose(`slack status update failed for channel ${p.channelId}: ${String(err)}`);
+    }
+  };
+
+  const setSlackThreadTitle = async (p: {
+    channelId: string;
+    threadTs?: string;
+    title?: string;
+  }) => {
+    const title = p.title?.trim();
+    if (!p.threadTs || !title) {
+      return;
+    }
+    const threadKey = `${p.channelId}:${p.threadTs}`;
+    if (titledThreads.has(threadKey)) {
+      return;
+    }
+    const payload = {
+      token: params.botToken,
+      channel_id: p.channelId,
+      thread_ts: p.threadTs,
+      title,
+    };
+    const client = params.app.client as unknown as {
+      assistant?: {
+        threads?: {
+          setTitle?: (args: typeof payload) => Promise<unknown>;
+        };
+      };
+      apiCall?: (method: string, args: typeof payload) => Promise<unknown>;
+    };
+    try {
+      if (client.assistant?.threads?.setTitle) {
+        await client.assistant.threads.setTitle(payload);
+      } else if (typeof client.apiCall === "function") {
+        await client.apiCall("assistant.threads.setTitle", payload);
+      } else {
+        return;
+      }
+      titledThreads.delete(threadKey);
+      titledThreads.set(threadKey, Date.now());
+      if (titledThreads.size > 2_000) {
+        const oldestKey = titledThreads.keys().next().value;
+        if (oldestKey) {
+          titledThreads.delete(oldestKey);
+        }
+      }
+    } catch (err) {
+      logVerbose(`slack title update failed for channel ${p.channelId}: ${String(err)}`);
     }
   };
 
@@ -415,5 +469,6 @@ export function createSlackMonitorContext(params: {
     resolveChannelName,
     resolveUserName,
     setSlackThreadStatus,
+    setSlackThreadTitle,
   };
 }

@@ -42,6 +42,7 @@ type SlackClient = {
   assistant: {
     threads: {
       setStatus: Mock<(...args: unknown[]) => Promise<{ ok: boolean }>>;
+      setTitle: Mock<(...args: unknown[]) => Promise<{ ok: boolean }>>;
     };
   };
   reactions: {
@@ -208,6 +209,7 @@ vi.mock("@slack/bolt", () => {
     assistant: {
       threads: {
         setStatus: vi.fn().mockResolvedValue({ ok: true }),
+        setTitle: vi.fn().mockResolvedValue({ ok: true }),
       },
     },
     reactions: {

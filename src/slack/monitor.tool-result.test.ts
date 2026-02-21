@@ -67,6 +67,17 @@ describe("monitorSlackProvider tool results", () => {
     return (replyMock.mock.calls[0]?.[0] ?? {}) as { WasMentioned?: boolean };
   }
 
+  function getSetTitleMock(): ReturnType<typeof vi.fn> {
+    const client = getSlackClient() as {
+      assistant?: { threads?: { setTitle?: ReturnType<typeof vi.fn> } };
+    } | null;
+    const setTitle = client?.assistant?.threads?.setTitle;
+    if (!setTitle) {
+      throw new Error("Slack setTitle mock not registered");
+    }
+    return setTitle;
+  }
+
   async function runDirectMessageEvent(ts: string, extraEvent: Record<string, unknown> = {}) {
     await runSlackMessageOnce(monitorSlackProvider, {
       event: makeSlackMessageEvent({ ts, ...extraEvent }),
@@ -321,6 +332,123 @@ describe("monitorSlackProvider tool results", () => {
       thread_ts: "123",
       status: "",
     });
+  });
+
+  it("sets assistant thread title after delivering a reply", async () => {
+    replyMock.mockResolvedValue({ text: "final reply" });
+
+    await runSlackMessageOnce(monitorSlackProvider, {
+      event: makeSlackMessageEvent({
+        text: "plan slack thread naming",
+      }),
+    });
+
+    const client = getSlackClient() as {
+      assistant?: { threads?: { setTitle?: ReturnType<typeof vi.fn> } };
+    };
+    const setTitle = client.assistant?.threads?.setTitle;
+    expect(setTitle).toHaveBeenCalledWith({
+      token: "bot-token",
+      channel_id: "C1",
+      thread_ts: "123",
+      title: "plan slack thread naming",
+    });
+  });
+
+  it("does not set a title for slash-command messages", async () => {
+    replyMock.mockResolvedValue({ text: "final reply" });
+    const setTitle = getSetTitleMock();
+    setTitle.mockClear();
+
+    await runSlackMessageOnce(monitorSlackProvider, {
+      event: makeSlackMessageEvent({
+        text: "/thread plan",
+      }),
+    });
+
+    expect(setTitle).not.toHaveBeenCalled();
+  });
+
+  it("does not set a title for low-signal messages", async () => {
+    replyMock.mockResolvedValue({ text: "final reply" });
+    const setTitle = getSetTitleMock();
+    setTitle.mockClear();
+
+    await runSlackMessageOnce(monitorSlackProvider, {
+      event: makeSlackMessageEvent({
+        text: "hello",
+      }),
+    });
+
+    expect(setTitle).not.toHaveBeenCalled();
+  });
+
+  it("does not set a title for media-placeholder-only messages", async () => {
+    replyMock.mockResolvedValue({ text: "final reply" });
+    const setTitle = getSetTitleMock();
+    setTitle.mockClear();
+
+    await runSlackMessageOnce(monitorSlackProvider, {
+      event: makeSlackMessageEvent({
+        text: "[Slack file: photo.jpg]",
+      }),
+    });
+
+    expect(setTitle).not.toHaveBeenCalled();
+  });
+
+  it("sets title from first real message when thread starter is a slash command", async () => {
+    replyMock.mockResolvedValue({ text: "final reply" });
+    const setTitle = getSetTitleMock();
+    setTitle.mockClear();
+    slackTestState.config = {
+      channels: {
+        slack: {
+          dm: { enabled: true, policy: "open", allowFrom: ["*"] },
+          channels: { C1: { allow: true, requireMention: false } },
+        },
+      },
+    };
+
+    const client = getSlackClient();
+    if (!client) {
+      throw new Error("Slack client not registered");
+    }
+    if (client.conversations?.replies) {
+      client.conversations.replies.mockResolvedValueOnce({
+        messages: [{ text: "/thread plan", user: "U2", ts: "222.333" }],
+      });
+    }
+
+    await runSlackMessageOnce(monitorSlackProvider, {
+      event: makeSlackMessageEvent({
+        text: "real follow up",
+        channel_type: "channel",
+        thread_ts: "222.333",
+        ts: "123.456",
+      }),
+    });
+
+    expect(setTitle).toHaveBeenCalledWith({
+      token: "bot-token",
+      channel_id: "C1",
+      thread_ts: "222.333",
+      title: "real follow up",
+    });
+  });
+
+  it("does not set a title when no reply is delivered", async () => {
+    replyMock.mockResolvedValue(undefined);
+    const setTitle = getSetTitleMock();
+    setTitle.mockClear();
+
+    await runSlackMessageOnce(monitorSlackProvider, {
+      event: makeSlackMessageEvent({
+        text: "any text",
+      }),
+    });
+
+    expect(setTitle).not.toHaveBeenCalled();
   });
 
   async function expectMentionPatternMessageAccepted(text: string): Promise<void> {

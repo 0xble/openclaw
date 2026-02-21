@@ -4,6 +4,7 @@ import { clearHistoryEntriesIfEnabled } from "../../../auto-reply/reply/history.
 import { createReplyDispatcherWithTyping } from "../../../auto-reply/reply/reply-dispatcher.js";
 import type { ReplyPayload } from "../../../auto-reply/types.js";
 import { removeAckReactionAfterReply } from "../../../channels/ack-reactions.js";
+import { deriveConversationTitle } from "../../../channels/conversation-title.js";
 import { logAckFailure, logTypingFailure } from "../../../channels/logging.js";
 import { createReplyPrefixOptions } from "../../../channels/reply-prefix.js";
 import { createTypingCallbacks } from "../../../channels/typing.js";
@@ -448,6 +449,22 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
       `slack: delivered ${finalCount} reply${finalCount === 1 ? "" : "ies"} to ${prepared.replyTarget}`,
     );
   }
+
+  const threadTitle = deriveConversationTitle({
+    primaryText:
+      typeof prepared.ctxPayload.ThreadStarterBody === "string"
+        ? prepared.ctxPayload.ThreadStarterBody
+        : typeof prepared.ctxPayload.BodyForAgent === "string"
+          ? prepared.ctxPayload.BodyForAgent
+          : undefined,
+    fallbackText: message.text,
+    maxChars: 80,
+  });
+  await ctx.setSlackThreadTitle({
+    channelId: message.channel,
+    threadTs: statusThreadTs,
+    title: threadTitle,
+  });
 
   removeAckReactionAfterReply({
     removeAfterReply: ctx.removeAckAfterReply,

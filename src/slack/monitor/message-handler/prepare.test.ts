@@ -462,6 +462,7 @@ describe("prepareSlackMessage sender prefix", () => {
       resolveChannelName: async () => ({ name: "general", type: "channel" }),
       resolveUserName: async () => ({ name: "Alice" }),
       setSlackThreadStatus: async () => undefined,
+      setSlackThreadTitle: async () => undefined,
     } as unknown as SlackMonitorContext;
   }
 
