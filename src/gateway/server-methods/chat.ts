@@ -3,6 +3,7 @@ import path from "node:path";
 import { CURRENT_SESSION_VERSION, SessionManager } from "@mariozechner/pi-coding-agent";
 import { resolveAgentConfig, resolveSessionAgentId } from "../../agents/agent-scope.js";
 import { resolveThinkingDefault } from "../../agents/model-selection.js";
+import type { ThinkLevel } from "../../auto-reply/thinking.js";
 import { resolveAgentTimeoutMs } from "../../agents/timeout.js";
 import { dispatchInboundMessage } from "../../auto-reply/dispatch.js";
 import { createReplyDispatcher } from "../../auto-reply/reply/reply-dispatcher.js";
@@ -614,8 +615,12 @@ export const chatHandlers: GatewayRequestHandlers = {
     let thinkingLevel = entry?.thinkingLevel;
     if (!thinkingLevel) {
       const sessionAgentId = resolveSessionAgentId({ sessionKey, config: cfg });
-      const agentThinkingDefault = resolveAgentConfig(cfg, sessionAgentId)?.thinkingDefault;
-      const globalThinkingDefault = cfg.agents?.defaults?.thinkingDefault;
+      const agentThinkingDefault = resolveAgentConfig(cfg, sessionAgentId)?.thinkingDefault as
+        | ThinkLevel
+        | undefined;
+      const globalThinkingDefault = cfg.agents?.defaults?.thinkingDefault as
+        | ThinkLevel
+        | undefined;
       const { provider, model } = resolveSessionModelRef(cfg, entry, sessionAgentId);
       const catalog =
         agentThinkingDefault || globalThinkingDefault
@@ -626,7 +631,7 @@ export const chatHandlers: GatewayRequestHandlers = {
         provider,
         model,
         catalog,
-        sessionThinkingDefault: entry?.thinkingLevel,
+        sessionThinkingDefault: entry?.thinkingLevel as ThinkLevel | undefined,
         agentThinkingDefault,
         globalThinkingDefault,
       });

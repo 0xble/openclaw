@@ -29,6 +29,7 @@ import {
   waitForEmbeddedPiRunEnd,
 } from "./pi-embedded.js";
 import { type AnnounceQueueItem, enqueueAnnounce } from "./subagent-announce-queue.js";
+import type { SpawnSubagentMode } from "./subagent-spawn.js";
 import { getSubagentDepthFromSessionStore } from "./subagent-depth.js";
 import { readLatestAssistantReply } from "./tools/agent-step.js";
 import { sanitizeTextContent, extractAssistantText } from "./tools/sessions-helpers.js";
@@ -752,6 +753,7 @@ export async function runSubagentAnnounceFlow(params: {
   endedAt?: number;
   label?: string;
   outcome?: SubagentRunOutcome;
+  spawnMode?: SpawnSubagentMode;
   announceType?: SubagentAnnounceType;
   expectsCompletionMessage?: boolean;
 }): Promise<boolean> {

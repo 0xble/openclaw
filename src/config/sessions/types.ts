@@ -22,6 +22,24 @@ export type SessionOrigin = {
   threadId?: string | number;
 };
 
+export type NativeThreadTitleErrorClass =
+  | "permission"
+  | "rate_limit"
+  | "not_found"
+  | "unknown";
+
+export type NativeThreadTitleState = {
+  threadKey: string;
+  status: "pending" | "applied" | "disabled" | "retry_after";
+  attempts?: number;
+  lastAttemptAt?: number;
+  appliedAt?: number;
+  appliedTitle?: string;
+  lastProposedTitle?: string;
+  retryAfter?: number;
+  lastErrorClass?: NativeThreadTitleErrorClass;
+};
+
 export type SessionEntry = {
   /**
    * Last delivered heartbeat payload (used to suppress duplicate heartbeat notifications).
@@ -103,6 +121,7 @@ export type SessionEntry = {
   groupChannel?: string;
   space?: string;
   origin?: SessionOrigin;
+  nativeThreadTitle?: NativeThreadTitleState;
   deliveryContext?: DeliveryContext;
   lastChannel?: SessionChannelId;
   lastTo?: string;

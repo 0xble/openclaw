@@ -142,7 +142,7 @@ async function createSignedDevice(params: {
     scopes: params.scopes,
     signedAtMs,
     token: params.token,
-    nonce: params.nonce,
+    nonce: params.nonce ?? `test-nonce-${signedAtMs}`,
   });
   return {
     identity,
@@ -930,6 +930,7 @@ describe("gateway server auth/connect", () => {
         scopes,
         signedAtMs,
         token: "secret",
+        nonce: `test-nonce-${signedAtMs}`,
       });
       return {
         id: identity.deviceId,
@@ -1002,7 +1003,7 @@ describe("gateway server auth/connect", () => {
       platform: "test",
       mode: GATEWAY_CLIENT_MODES.TEST,
     };
-    const buildDevice = (role: "operator" | "node", scopes: string[], nonce?: string) => {
+    const buildDevice = (role: "operator" | "node", scopes: string[], nonce = `test-nonce-${Date.now()}`) => {
       const signedAtMs = Date.now();
       const payload = buildDeviceAuthPayload({
         deviceId: identity.deviceId,
@@ -1111,6 +1112,7 @@ describe("gateway server auth/connect", () => {
         scopes,
         signedAtMs,
         token: "secret",
+        nonce: `test-nonce-${signedAtMs}`,
       });
       return {
         id: identity.deviceId,

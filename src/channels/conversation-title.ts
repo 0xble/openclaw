@@ -78,3 +78,17 @@ export function deriveConversationTitle(params: {
 
   return undefined;
 }
+
+const DEFAULT_THREAD_PLACEHOLDERS = new Set([
+  "new conversation",
+  "new thread",
+  "new chat",
+  "untitled",
+  "general",
+  "no title",
+]);
+
+export function isDefaultThreadPlaceholder(value?: string): boolean {
+  if (!value) return true;
+  return DEFAULT_THREAD_PLACEHOLDERS.has(value.trim().toLowerCase());
+}
