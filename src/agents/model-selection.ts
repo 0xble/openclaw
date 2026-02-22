@@ -508,10 +508,22 @@ export function resolveThinkingDefault(params: {
   provider: string;
   model: string;
   catalog?: ModelCatalogEntry[];
+  sessionThinkingDefault?: ThinkLevel;
+  agentThinkingDefault?: ThinkLevel;
+  globalThinkingDefault?: ThinkLevel;
 }): ThinkLevel {
-  const configured = params.cfg.agents?.defaults?.thinkingDefault;
-  if (configured) {
-    return configured;
+  const sessionConfigured = params.sessionThinkingDefault;
+  if (sessionConfigured) {
+    return sessionConfigured;
+  }
+  const agentConfigured = params.agentThinkingDefault;
+  if (agentConfigured) {
+    return agentConfigured;
+  }
+  const globalConfigured =
+    params.globalThinkingDefault ?? params.cfg.agents?.defaults?.thinkingDefault;
+  if (globalConfigured) {
+    return globalConfigured;
   }
   const candidate = params.catalog?.find(
     (entry) => entry.provider === params.provider && entry.id === params.model,

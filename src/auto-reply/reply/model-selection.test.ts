@@ -264,3 +264,64 @@ describe("createModelSelectionState respects session model override", () => {
     expect(state.model).toBe("deepseek-v3-4bit-mlx");
   });
 });
+
+describe("createModelSelectionState thinking default precedence", () => {
+  const defaultProvider = "openai";
+  const defaultModel = "gpt-4o-mini";
+
+  async function resolveDefaultThinking(params: {
+    cfg: OpenClawConfig;
+    agentThinkingDefault?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+    sessionThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+  }) {
+    const sessionKey = "agent:ops:main";
+    const sessionEntry = makeEntry({
+      ...(params.sessionThinkingLevel ? { thinkingLevel: params.sessionThinkingLevel } : undefined),
+    });
+    const sessionStore = { [sessionKey]: sessionEntry };
+    const state = await createModelSelectionState({
+      cfg: params.cfg,
+      agentCfg: params.agentThinkingDefault
+        ? ({
+            thinkingDefault: params.agentThinkingDefault,
+          } as NonNullable<NonNullable<OpenClawConfig["agents"]>["defaults"]>)
+        : params.cfg.agents?.defaults,
+      sessionEntry,
+      sessionStore,
+      sessionKey,
+      defaultProvider,
+      defaultModel,
+      provider: defaultProvider,
+      model: defaultModel,
+      hasModelDirective: false,
+    });
+    return state.resolveDefaultThinkingLevel();
+  }
+
+  it("prefers session thinking level over per-agent and global defaults", async () => {
+    const thinking = await resolveDefaultThinking({
+      cfg: {
+        agents: {
+          defaults: { thinkingDefault: "low" },
+        },
+      } as OpenClawConfig,
+      agentThinkingDefault: "high",
+      sessionThinkingLevel: "minimal",
+    });
+
+    expect(thinking).toBe("minimal");
+  });
+
+  it("prefers per-agent thinking default over global default", async () => {
+    const thinking = await resolveDefaultThinking({
+      cfg: {
+        agents: {
+          defaults: { thinkingDefault: "low" },
+        },
+      } as OpenClawConfig,
+      agentThinkingDefault: "high",
+    });
+
+    expect(thinking).toBe("high");
+  });
+});

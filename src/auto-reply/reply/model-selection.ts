@@ -391,9 +391,11 @@ export async function createModelSelectionState(params: {
       provider,
       model,
       catalog: catalogForThinking,
+      sessionThinkingDefault: sessionEntry?.thinkingLevel as ThinkLevel | undefined,
+      agentThinkingDefault: agentCfg?.thinkingDefault as ThinkLevel | undefined,
+      globalThinkingDefault: cfg.agents?.defaults?.thinkingDefault as ThinkLevel | undefined,
     });
-    defaultThinkingLevel =
-      resolved ?? (agentCfg?.thinkingDefault as ThinkLevel | undefined) ?? "off";
+    defaultThinkingLevel = resolved;
     return defaultThinkingLevel;
   };
 
