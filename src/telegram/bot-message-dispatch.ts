@@ -13,6 +13,10 @@ import type { ReplyPayload } from "../auto-reply/types.js";
 import { removeAckReactionAfterReply } from "../channels/ack-reactions.js";
 import { logAckFailure, logTypingFailure } from "../channels/logging.js";
 import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
+import {
+  generateThreadTitleViaLLM,
+  resolveThreadTitleLlmSettings,
+} from "../channels/thread-title-llm.js";
 import { applyThreadTitle } from "../channels/thread-title.js";
 import { createTypingCallbacks } from "../channels/typing.js";
 import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
@@ -690,9 +694,11 @@ export const dispatchTelegramMessage = async ({
     });
   }
 
-  const forumTopicId = threadSpec.scope === "forum" ? threadSpec.id : undefined;
-  if (typeof forumTopicId === "number" && forumTopicId > 1) {
-    const titleResult = await applyThreadTitle({
+  const threadTitleTopicId =
+    threadSpec.scope === "forum" || threadSpec.scope === "dm" ? threadSpec.id : undefined;
+  if (typeof threadTitleTopicId === "number" && threadTitleTopicId > 1) {
+    const threadTitleLlm = resolveThreadTitleLlmSettings(cfg);
+    await applyThreadTitle({
       provider: createTelegramThreadTitleProvider({
         api: bot.api,
         token: opts.token,
@@ -702,18 +708,30 @@ export const dispatchTelegramMessage = async ({
         channel: "telegram",
         accountId: route.accountId,
         conversationId: String(chatId),
-        threadId: forumTopicId,
+        threadId: threadTitleTopicId,
       },
       primaryText:
         typeof ctxPayload.BodyForAgent === "string" ? ctxPayload.BodyForAgent : undefined,
       fallbackText: typeof ctxPayload.CommandBody === "string" ? ctxPayload.CommandBody : msg.text,
-      maxChars: 128,
+      maxChars: 24,
+      isFirstMessage: context.isFirstMessage,
+      strategy: threadTitleLlm.strategy,
+      allowOverwriteCurrentTitle: threadTitleLlm.allowOverwriteCurrentTitle,
+      generateLlmTitle: async ({ primaryText, fallbackText, maxChars, target }) => {
+        if (threadTitleLlm.strategy === "deterministic") {
+          return undefined;
+        }
+        return await generateThreadTitleViaLLM({
+          cfg,
+          primaryText,
+          fallbackText,
+          maxChars,
+          target,
+          modelRef: threadTitleLlm.modelRef,
+          timeoutMs: threadTitleLlm.timeoutMs,
+        });
+      },
     });
-    if (titleResult.outcome === "failed") {
-      logVerbose(
-        `telegram: forum topic title update failed for ${String(chatId)}:${String(forumTopicId)} (${titleResult.errorClass ?? "unknown"})`,
-      );
-    }
   }
 
   clearGroupHistory();

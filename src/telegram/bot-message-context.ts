@@ -835,6 +835,7 @@ export const buildTelegramMessageContext = async ({
     removeAckAfterReply,
     statusReactionController,
     accountId: account.accountId,
+    isFirstMessage: previousTimestamp == null,
   };
 };
 
