@@ -6,6 +6,10 @@ import type { ReplyPayload } from "../../../auto-reply/types.js";
 import { removeAckReactionAfterReply } from "../../../channels/ack-reactions.js";
 import { logAckFailure, logTypingFailure } from "../../../channels/logging.js";
 import { createReplyPrefixOptions } from "../../../channels/reply-prefix.js";
+import {
+  generateThreadTitleViaLLM,
+  resolveThreadTitleLlmSettings,
+} from "../../../channels/thread-title-llm.js";
 import { applyThreadTitle } from "../../../channels/thread-title.js";
 import { createTypingCallbacks } from "../../../channels/typing.js";
 import { resolveStorePath, updateLastRoute } from "../../../config/sessions.js";
@@ -435,7 +439,8 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     );
   }
 
-  const titleResult = await applyThreadTitle({
+  const threadTitleLlm = resolveThreadTitleLlmSettings(cfg);
+  await applyThreadTitle({
     provider: createSlackThreadTitleProvider({ app: ctx.app, botToken: ctx.botToken }),
     target: {
       channel: "slack",
@@ -450,15 +455,29 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
         : typeof prepared.ctxPayload.BodyForAgent === "string"
           ? prepared.ctxPayload.BodyForAgent
           : undefined,
-    fallbackText: message.text,
+    fallbackText:
+      typeof prepared.ctxPayload.BodyForAgent === "string"
+        ? prepared.ctxPayload.BodyForAgent
+        : message.text,
     maxChars: 80,
+    isFirstMessage: prepared.isFirstThreadMessage,
+    strategy: threadTitleLlm.strategy,
+    allowOverwriteCurrentTitle: threadTitleLlm.allowOverwriteCurrentTitle,
+    generateLlmTitle: async ({ primaryText, fallbackText, maxChars, target }) => {
+      if (threadTitleLlm.strategy === "deterministic") {
+        return undefined;
+      }
+      return await generateThreadTitleViaLLM({
+        cfg,
+        primaryText,
+        fallbackText,
+        maxChars,
+        target,
+        modelRef: threadTitleLlm.modelRef,
+        timeoutMs: threadTitleLlm.timeoutMs,
+      });
+    },
   });
-  if (titleResult.outcome === "failed") {
-    logVerbose(
-      `slack: thread title update failed for ${message.channel}:${statusThreadTs ?? "none"} (${titleResult.errorClass ?? "unknown"})`,
-    );
-  }
-
   removeAckReactionAfterReply({
     removeAfterReply: ctx.removeAckAfterReply,
     ackReactionPromise: prepared.ackReactionPromise,
