@@ -9,6 +9,17 @@ const deliverReplies = vi.hoisted(() => vi.fn());
 const editMessageTelegram = vi.hoisted(() => vi.fn());
 const loadSessionStore = vi.hoisted(() => vi.fn());
 const resolveStorePath = vi.hoisted(() => vi.fn(() => "/tmp/sessions.json"));
+const applyThreadTitle = vi.hoisted(() =>
+  vi.fn(async () => ({ outcome: "skipped" as const, reason: "test" })),
+);
+const resolveThreadTitleLlmSettings = vi.hoisted(() =>
+  vi.fn(() => ({
+    strategy: "deterministic" as const,
+    timeoutMs: 12_000,
+    allowOverwriteCurrentTitle: false,
+  })),
+);
+const generateThreadTitleViaLLM = vi.hoisted(() => vi.fn());
 
 vi.mock("./draft-stream.js", () => ({
   createTelegramDraftStream,
@@ -31,6 +42,19 @@ vi.mock("../config/sessions.js", async () => ({
   resolveStorePath,
 }));
 
+vi.mock("../channels/thread-title.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../channels/thread-title.js")>();
+  return {
+    ...actual,
+    applyThreadTitle,
+  };
+});
+
+vi.mock("../channels/thread-title-llm.js", () => ({
+  resolveThreadTitleLlmSettings,
+  generateThreadTitleViaLLM,
+}));
+
 vi.mock("./sticker-cache.js", () => ({
   cacheSticker: vi.fn(),
   describeStickerImage: vi.fn(),
@@ -48,6 +72,9 @@ describe("dispatchTelegramMessage draft streaming", () => {
     editMessageTelegram.mockClear();
     loadSessionStore.mockClear();
     resolveStorePath.mockClear();
+    applyThreadTitle.mockClear();
+    resolveThreadTitleLlmSettings.mockClear();
+    generateThreadTitleViaLLM.mockClear();
     resolveStorePath.mockReturnValue("/tmp/sessions.json");
     loadSessionStore.mockReturnValue({});
   });
@@ -218,6 +245,28 @@ describe("dispatchTelegramMessage draft streaming", () => {
     );
     expect(editMessageTelegram).not.toHaveBeenCalled();
     expect(draftStream.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("attempts thread title update for DM topics", async () => {
+    const draftStream = createDraftStream();
+    createTelegramDraftStream.mockReturnValue(draftStream);
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({ text: "Hello" }, { kind: "final" });
+      return { queuedFinal: true };
+    });
+    deliverReplies.mockResolvedValue({ delivered: true });
+
+    await dispatchWithContext({ context: createContext() });
+
+    expect(applyThreadTitle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        target: expect.objectContaining({
+          channel: "telegram",
+          conversationId: "123",
+          threadId: 777,
+        }),
+      }),
+    );
   });
 
   it("uses 30-char preview debounce for legacy block stream mode", async () => {
