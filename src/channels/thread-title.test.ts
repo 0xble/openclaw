@@ -164,4 +164,119 @@ describe("applyThreadTitle", () => {
     expect(result.reason).toBe("provider_mismatch");
     expect(setTitle).not.toHaveBeenCalled();
   });
+
+  it("uses llm strategy title when generator returns a valid candidate", async () => {
+    const setTitle = vi.fn().mockResolvedValue(undefined);
+    const provider: ThreadTitleProvider = {
+      channel: "slack",
+      setTitle,
+    };
+    const result = await applyThreadTitle({
+      provider,
+      target: createTarget(),
+      primaryText: "yooooooooooooooooooo",
+      maxChars: 80,
+      strategy: "llm",
+      generateLlmTitle: async () => "Daily Standup Follow-ups",
+      stateStore: createInMemoryThreadTitleStateStore(),
+    });
+    expect(result.outcome).toBe("applied");
+    expect(result.title).toBe("Daily Standup Follow-ups");
+    expect(setTitle).toHaveBeenCalledWith(expect.anything(), "Daily Standup Follow-ups");
+  });
+
+  it("falls back to deterministic title when llm strategy returns nothing", async () => {
+    const setTitle = vi.fn().mockResolvedValue(undefined);
+    const provider: ThreadTitleProvider = {
+      channel: "slack",
+      setTitle,
+    };
+    const result = await applyThreadTitle({
+      provider,
+      target: createTarget(),
+      primaryText: "Please review q1 launch checklist",
+      maxChars: 80,
+      strategy: "llm",
+      generateLlmTitle: async () => undefined,
+      stateStore: createInMemoryThreadTitleStateStore(),
+    });
+    expect(result.outcome).toBe("applied");
+    expect(result.title).toBe("Please review q1 launch checklist");
+  });
+
+  it("overwrites non-default current title when it matches the seed text", async () => {
+    const setTitle = vi.fn().mockResolvedValue(undefined);
+    const provider: ThreadTitleProvider = {
+      channel: "telegram",
+      getCurrentTitle: vi.fn().mockResolvedValue("yoooooooooooooooooo"),
+      setTitle,
+    };
+    const result = await applyThreadTitle({
+      provider,
+      target: createTarget({ channel: "telegram" }),
+      primaryText: "yoooooooooooooooooo",
+      fallbackText: "yoooooooooooooooooo",
+      maxChars: 80,
+      strategy: "llm",
+      generateLlmTitle: async () => "Casual Check-in",
+      stateStore: createInMemoryThreadTitleStateStore(),
+    });
+    expect(result.outcome).toBe("applied");
+    expect(result.title).toBe("Casual Check-in");
+    expect(setTitle).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips when isFirstMessage is false (stateless restart guard)", async () => {
+    const setTitle = vi.fn().mockResolvedValue(undefined);
+    const provider: ThreadTitleProvider = {
+      channel: "slack",
+      setTitle,
+    };
+    const result = await applyThreadTitle({
+      provider,
+      target: createTarget(),
+      primaryText: "Deploy the new feature branch",
+      maxChars: 80,
+      isFirstMessage: false,
+      stateStore: createInMemoryThreadTitleStateStore(),
+    });
+    expect(result.outcome).toBe("skipped");
+    expect(result.reason).toBe("not_first_message");
+    expect(setTitle).not.toHaveBeenCalled();
+  });
+
+  it("applies when isFirstMessage is true", async () => {
+    const setTitle = vi.fn().mockResolvedValue(undefined);
+    const provider: ThreadTitleProvider = {
+      channel: "slack",
+      setTitle,
+    };
+    const result = await applyThreadTitle({
+      provider,
+      target: createTarget(),
+      primaryText: "Deploy the new feature branch",
+      maxChars: 80,
+      isFirstMessage: true,
+      stateStore: createInMemoryThreadTitleStateStore(),
+    });
+    expect(result.outcome).toBe("applied");
+    expect(setTitle).toHaveBeenCalledTimes(1);
+  });
+
+  it("applies when isFirstMessage is omitted (backward compat)", async () => {
+    const setTitle = vi.fn().mockResolvedValue(undefined);
+    const provider: ThreadTitleProvider = {
+      channel: "slack",
+      setTitle,
+    };
+    const result = await applyThreadTitle({
+      provider,
+      target: createTarget(),
+      primaryText: "Deploy the new feature branch",
+      maxChars: 80,
+      stateStore: createInMemoryThreadTitleStateStore(),
+    });
+    expect(result.outcome).toBe("applied");
+    expect(setTitle).toHaveBeenCalledTimes(1);
+  });
 });
