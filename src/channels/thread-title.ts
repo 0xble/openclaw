@@ -1,6 +1,7 @@
 import { deriveConversationTitle, isDefaultThreadPlaceholder } from "./conversation-title.js";
 
 export type ThreadTitleErrorClass = "permission" | "rate_limit" | "not_found" | "unknown";
+export type ThreadTitleStrategy = "deterministic" | "hybrid" | "llm";
 
 export type ThreadTitleState = {
   threadKey: string;
@@ -97,9 +98,24 @@ export async function applyThreadTitle(params: {
   primaryText?: string;
   fallbackText?: string;
   maxChars: number;
+  strategy?: ThreadTitleStrategy;
+  generateLlmTitle?: (args: {
+    primaryText?: string;
+    fallbackText?: string;
+    maxChars: number;
+    target: ThreadTitleTarget;
+  }) => Promise<string | undefined>;
+  allowOverwriteCurrentTitle?: boolean;
+  /** Caller-provided signal: false means this thread already has history and
+   *  the title should not be re-applied. Omit or pass true for first messages. */
+  isFirstMessage?: boolean;
   nowMs?: () => number;
   stateStore?: ThreadTitleStateStore;
 }): Promise<ThreadTitleResult> {
+  if (params.isFirstMessage === false) {
+    return { outcome: "skipped", reason: "not_first_message" };
+  }
+
   const channel = params.target.channel.trim().toLowerCase();
   const providerChannel = params.provider.channel.trim().toLowerCase();
   if (!channel || channel !== providerChannel) {
@@ -129,11 +145,41 @@ export async function applyThreadTitle(params: {
     return { outcome: "skipped", reason: "already_applied", threadKey };
   }
 
-  const title = deriveConversationTitle({
+  const deterministicTitle = deriveConversationTitle({
     primaryText: params.primaryText,
     fallbackText: params.fallbackText,
     maxChars: params.maxChars,
   });
+  const strategy = params.strategy ?? "deterministic";
+  let title = deterministicTitle;
+  if (strategy !== "deterministic" && params.generateLlmTitle) {
+    try {
+      const llmCandidateRaw = await params.generateLlmTitle({
+        primaryText: params.primaryText,
+        fallbackText: params.fallbackText,
+        maxChars: params.maxChars,
+        target: params.target,
+      });
+      if (llmCandidateRaw?.trim()) {
+        const llmTitle = deriveConversationTitle({
+          primaryText: llmCandidateRaw,
+          fallbackText: deterministicTitle,
+          maxChars: params.maxChars,
+        });
+        if (llmTitle) {
+          title = llmTitle;
+        } else if (strategy === "llm") {
+          title = deterministicTitle;
+        }
+      } else if (strategy === "llm") {
+        title = deterministicTitle;
+      }
+    } catch {
+      if (strategy === "llm") {
+        title = deterministicTitle;
+      }
+    }
+  }
   if (!title) {
     return { outcome: "skipped", reason: "no_candidate", threadKey };
   }
@@ -156,17 +202,35 @@ export async function applyThreadTitle(params: {
     try {
       const currentTitle = await params.provider.getCurrentTitle(params.target);
       if (currentTitle && !isDefaultThreadPlaceholder(currentTitle)) {
-        setStoreState(stateStore, {
-          ...baseState,
-          status: "disabled",
-          appliedAt: now,
-          appliedTitle: currentTitle,
+        const normalizedCurrentTitle = deriveConversationTitle({
+          primaryText: currentTitle,
+          maxChars: params.maxChars,
         });
-        return {
-          outcome: "skipped",
-          reason: "existing_title_present",
-          threadKey,
-        };
+        const normalizedSeedTitle = deriveConversationTitle({
+          primaryText: params.primaryText,
+          fallbackText: params.fallbackText,
+          maxChars: params.maxChars,
+        });
+        const sameAsSeed =
+          normalizedCurrentTitle &&
+          normalizedSeedTitle &&
+          normalizedCurrentTitle.trim().toLowerCase() === normalizedSeedTitle.trim().toLowerCase();
+        const canOverwrite = params.allowOverwriteCurrentTitle === true || Boolean(sameAsSeed);
+        if (canOverwrite) {
+          // Continue and overwrite low-signal auto-created topic titles.
+        } else {
+          setStoreState(stateStore, {
+            ...baseState,
+            status: "disabled",
+            appliedAt: now,
+            appliedTitle: currentTitle,
+          });
+          return {
+            outcome: "skipped",
+            reason: "existing_title_present",
+            threadKey,
+          };
+        }
       }
     } catch {
       // Best-effort current-title check.

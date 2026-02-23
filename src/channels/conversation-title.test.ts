@@ -84,7 +84,7 @@ describe("deriveConversationTitle", () => {
         primaryText: "[Slack file: report.pdf] [Slack file: chart.png]",
         maxChars: 80,
       }),
-    ).toBeUndefined();
+    ).toBe("report.pdf chart.png");
   });
 
   it("strips placeholder tokens when user text is present", () => {
@@ -93,7 +93,36 @@ describe("deriveConversationTitle", () => {
         primaryText: "Please review [Slack file: report.pdf]",
         maxChars: 80,
       }),
-    ).toBe("Please review");
+    ).toBe("Please review report.pdf");
+  });
+
+  it("derives title from attachment understanding sections", () => {
+    expect(
+      deriveConversationTitle({
+        primaryText:
+          "[Image]\nDescription:\nQuarterly dashboard screenshot showing conversion and churn",
+        maxChars: 80,
+      }),
+    ).toBe("Quarterly dashboard screenshot showing conversion and churn");
+  });
+
+  it("derives title from file blocks", () => {
+    expect(
+      deriveConversationTitle({
+        primaryText:
+          '<file name="q1-plan.md" mime="text/markdown">\nQ1 launch plan with risks and owners\n</file>',
+        maxChars: 80,
+      }),
+    ).toBe("q1-plan.md Q1 launch plan with risks and owners");
+  });
+
+  it("derives title from attachment note entries", () => {
+    expect(
+      deriveConversationTitle({
+        primaryText: "[media attached: /tmp/architecture-v2.pdf (application/pdf)]",
+        maxChars: 80,
+      }),
+    ).toBe("architecture-v2.pdf");
   });
 });
 
