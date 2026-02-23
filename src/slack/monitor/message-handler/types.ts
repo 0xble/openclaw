@@ -20,4 +20,6 @@ export type PreparedSlackMessage = {
   ackReactionMessageTs?: string;
   ackReactionValue: string;
   ackReactionPromise: Promise<boolean> | null;
+  /** True when the thread session has no prior activity (first message). */
+  isFirstThreadMessage: boolean;
 };
