@@ -14,6 +14,7 @@ const {
   buildInlineKeyboard,
   createForumTopicTelegram,
   editMessageTelegram,
+  renameForumTopicTelegram,
   reactMessageTelegram,
   sendMessageTelegram,
   sendPollTelegram,
@@ -1489,4 +1490,45 @@ describe("createForumTopicTelegram", () => {
       expect(result).toEqual(testCase.expectedResult);
     });
   }
+});
+
+describe("renameForumTopicTelegram", () => {
+  it("uses base chat id when target includes topic suffix", async () => {
+    const editForumTopic = vi.fn().mockResolvedValue(true);
+    const api = { editForumTopic } as unknown as Bot["api"];
+
+    const result = await renameForumTopicTelegram(
+      "telegram:group:-1001234567890:topic:271",
+      271,
+      "Roadmap",
+      {
+        token: "tok",
+        api,
+      },
+    );
+
+    expect(editForumTopic).toHaveBeenCalledWith("-1001234567890", 271, {
+      name: "Roadmap",
+    });
+    expect(result).toEqual({
+      topicId: 271,
+      name: "Roadmap",
+      chatId: "-1001234567890",
+    });
+  });
+
+  it("validates topic id and name", async () => {
+    const editForumTopic = vi.fn();
+    const api = { editForumTopic } as unknown as Bot["api"];
+    await expect(
+      renameForumTopicTelegram("-1001234567890", 0, "Roadmap", { token: "tok", api }),
+    ).rejects.toThrow(/positive integer/i);
+    await expect(
+      renameForumTopicTelegram("-1001234567890", 42, "", { token: "tok", api }),
+    ).rejects.toThrow(/required/i);
+    await expect(
+      renameForumTopicTelegram("-1001234567890", 42, "x".repeat(129), { token: "tok", api }),
+    ).rejects.toThrow(/128 characters or fewer/i);
+    expect(editForumTopic).not.toHaveBeenCalled();
+  });
 });

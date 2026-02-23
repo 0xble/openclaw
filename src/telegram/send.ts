@@ -1101,6 +1101,12 @@ export type TelegramCreateForumTopicResult = {
   chatId: string;
 };
 
+export type TelegramRenameForumTopicResult = {
+  topicId: number;
+  name: string;
+  chatId: string;
+};
+
 /**
  * Create a forum topic in a Telegram supergroup.
  * Requires the bot to have `can_manage_topics` permission.
@@ -1176,6 +1182,75 @@ export async function createForumTopicTelegram(
   return {
     topicId,
     name: result.name ?? trimmedName,
+    chatId: normalizedChatId,
+  };
+}
+
+/**
+ * Rename an existing forum topic in a Telegram supergroup.
+ * Requires the bot to have `can_manage_topics` permission.
+ */
+export async function renameForumTopicTelegram(
+  chatId: string,
+  topicId: number,
+  name: string,
+  opts: TelegramCreateForumTopicOpts = {},
+): Promise<TelegramRenameForumTopicResult> {
+  const normalizedTopicId = Math.trunc(topicId);
+  if (!Number.isFinite(normalizedTopicId) || normalizedTopicId <= 0) {
+    throw new Error("Forum topic id must be a positive integer");
+  }
+  if (!name?.trim()) {
+    throw new Error("Forum topic name is required");
+  }
+  const trimmedName = name.trim();
+  if (trimmedName.length > 128) {
+    throw new Error("Forum topic name must be 128 characters or fewer");
+  }
+
+  const cfg = loadConfig();
+  const account = resolveTelegramAccount({
+    cfg,
+    accountId: opts.accountId,
+  });
+  const token = resolveToken(opts.token, account);
+  // Accept topic-qualified targets (e.g. telegram:group:<id>:topic:<thread>)
+  // but editForumTopic must always target the base supergroup chat id.
+  const target = parseTelegramTarget(chatId);
+  const normalizedChatId = normalizeChatId(target.chatId);
+  const client = resolveTelegramClientOptions(account);
+  const api = opts.api ?? new Bot(token, client ? { client } : undefined).api;
+
+  const request = createTelegramRetryRunner({
+    retry: opts.retry,
+    configRetry: account.config.retry,
+    verbose: opts.verbose,
+    shouldRetry: (err) => isRecoverableTelegramNetworkError(err, { context: "send" }),
+  });
+  const logHttpError = createTelegramHttpLogger(cfg);
+  const requestWithDiag = <T>(fn: () => Promise<T>, label?: string) =>
+    withTelegramApiErrorLogging({
+      operation: label ?? "request",
+      fn: () => request(fn, label),
+    }).catch((err) => {
+      logHttpError(label ?? "request", err);
+      throw err;
+    });
+
+  await requestWithDiag(
+    () => api.editForumTopic(normalizedChatId, normalizedTopicId, { name: trimmedName }),
+    "editForumTopic",
+  );
+
+  recordChannelActivity({
+    channel: "telegram",
+    accountId: account.accountId,
+    direction: "outbound",
+  });
+
+  return {
+    topicId: normalizedTopicId,
+    name: trimmedName,
     chatId: normalizedChatId,
   };
 }

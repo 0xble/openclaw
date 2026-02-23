@@ -13,6 +13,7 @@ import type { ReplyPayload } from "../auto-reply/types.js";
 import { removeAckReactionAfterReply } from "../channels/ack-reactions.js";
 import { logAckFailure, logTypingFailure } from "../channels/logging.js";
 import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
+import { applyThreadTitle } from "../channels/thread-title.js";
 import { createTypingCallbacks } from "../channels/typing.js";
 import { resolveMarkdownTableMode } from "../config/markdown-tables.js";
 import { loadSessionStore, resolveStorePath } from "../config/sessions.js";
@@ -40,6 +41,7 @@ import {
 } from "./reasoning-lane-coordinator.js";
 import { editMessageTelegram } from "./send.js";
 import { cacheSticker, describeStickerImage } from "./sticker-cache.js";
+import { createTelegramThreadTitleProvider } from "./thread-title-provider.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
 
@@ -665,5 +667,32 @@ export const dispatchTelegramMessage = async ({
       },
     });
   }
+
+  const forumTopicId = threadSpec.scope === "forum" ? threadSpec.id : undefined;
+  if (typeof forumTopicId === "number" && forumTopicId > 1) {
+    const titleResult = await applyThreadTitle({
+      provider: createTelegramThreadTitleProvider({
+        api: bot.api,
+        token: opts.token,
+        accountId: route.accountId,
+      }),
+      target: {
+        channel: "telegram",
+        accountId: route.accountId,
+        conversationId: String(chatId),
+        threadId: forumTopicId,
+      },
+      primaryText:
+        typeof ctxPayload.BodyForAgent === "string" ? ctxPayload.BodyForAgent : undefined,
+      fallbackText: typeof ctxPayload.CommandBody === "string" ? ctxPayload.CommandBody : msg.text,
+      maxChars: 128,
+    });
+    if (titleResult.outcome === "failed") {
+      logVerbose(
+        `telegram: forum topic title update failed for ${String(chatId)}:${String(forumTopicId)} (${titleResult.errorClass ?? "unknown"})`,
+      );
+    }
+  }
+
   clearGroupHistory();
 };
