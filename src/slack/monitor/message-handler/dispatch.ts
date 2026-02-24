@@ -377,6 +377,50 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
           }
         };
 
+  const threadTitleLlm = resolveThreadTitleLlmSettings(cfg);
+  void applyThreadTitle({
+    provider: createSlackThreadTitleProvider({ app: ctx.app, botToken: ctx.botToken }),
+    target: {
+      channel: "slack",
+      accountId: route.accountId,
+      conversationId: message.channel,
+      threadId: statusThreadTs,
+      to: prepared.replyTarget,
+    },
+    primaryText:
+      typeof prepared.ctxPayload.ThreadStarterBody === "string"
+        ? prepared.ctxPayload.ThreadStarterBody
+        : typeof prepared.ctxPayload.BodyForAgent === "string"
+          ? prepared.ctxPayload.BodyForAgent
+          : undefined,
+    fallbackText:
+      typeof prepared.ctxPayload.BodyForAgent === "string"
+        ? prepared.ctxPayload.BodyForAgent
+        : message.text,
+    maxChars: 80,
+    isFirstMessage: prepared.isFirstThreadMessage,
+    strategy: threadTitleLlm.strategy,
+    allowOverwriteCurrentTitle: threadTitleLlm.allowOverwriteCurrentTitle,
+    generateLlmTitle: async ({ primaryText, fallbackText, maxChars, target }) => {
+      if (threadTitleLlm.strategy === "deterministic") {
+        return undefined;
+      }
+      return await generateThreadTitleViaLLM({
+        cfg,
+        primaryText,
+        fallbackText,
+        maxChars,
+        target,
+        modelRef: threadTitleLlm.modelRef,
+        timeoutMs: threadTitleLlm.timeoutMs,
+      });
+    },
+  }).catch((err) => {
+    logVerbose(
+      `slack: thread title failed for ${message.channel}:${statusThreadTs}: ${String(err)}`,
+    );
+  });
+
   const { queuedFinal, counts } = await dispatchInboundMessage({
     ctx: prepared.ctxPayload,
     cfg,
@@ -439,45 +483,6 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
     );
   }
 
-  const threadTitleLlm = resolveThreadTitleLlmSettings(cfg);
-  await applyThreadTitle({
-    provider: createSlackThreadTitleProvider({ app: ctx.app, botToken: ctx.botToken }),
-    target: {
-      channel: "slack",
-      accountId: route.accountId,
-      conversationId: message.channel,
-      threadId: statusThreadTs,
-      to: prepared.replyTarget,
-    },
-    primaryText:
-      typeof prepared.ctxPayload.ThreadStarterBody === "string"
-        ? prepared.ctxPayload.ThreadStarterBody
-        : typeof prepared.ctxPayload.BodyForAgent === "string"
-          ? prepared.ctxPayload.BodyForAgent
-          : undefined,
-    fallbackText:
-      typeof prepared.ctxPayload.BodyForAgent === "string"
-        ? prepared.ctxPayload.BodyForAgent
-        : message.text,
-    maxChars: 80,
-    isFirstMessage: prepared.isFirstThreadMessage,
-    strategy: threadTitleLlm.strategy,
-    allowOverwriteCurrentTitle: threadTitleLlm.allowOverwriteCurrentTitle,
-    generateLlmTitle: async ({ primaryText, fallbackText, maxChars, target }) => {
-      if (threadTitleLlm.strategy === "deterministic") {
-        return undefined;
-      }
-      return await generateThreadTitleViaLLM({
-        cfg,
-        primaryText,
-        fallbackText,
-        maxChars,
-        target,
-        modelRef: threadTitleLlm.modelRef,
-        timeoutMs: threadTitleLlm.timeoutMs,
-      });
-    },
-  });
   removeAckReactionAfterReply({
     removeAfterReply: ctx.removeAckAfterReply,
     ackReactionPromise: prepared.ackReactionPromise,

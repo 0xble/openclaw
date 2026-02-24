@@ -267,6 +267,41 @@ describe("dispatchTelegramMessage draft streaming", () => {
         }),
       }),
     );
+    const threadTitleOrder =
+      applyThreadTitle.mock.invocationCallOrder[0] ?? Number.MAX_SAFE_INTEGER;
+    const dispatchOrder =
+      dispatchReplyWithBufferedBlockDispatcher.mock.invocationCallOrder[0] ??
+      Number.MAX_SAFE_INTEGER;
+    expect(threadTitleOrder).toBeLessThan(dispatchOrder);
+  });
+
+  it("warns but does not block response when thread title fails", async () => {
+    applyThreadTitle.mockRejectedValueOnce(new Error("API rate limit"));
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      await dispatcherOptions.deliver({ text: "Done" }, { kind: "final" });
+      return { queuedFinal: true };
+    });
+    deliverReplies.mockResolvedValue({ delivered: true });
+
+    await dispatchWithContext({
+      context: createContext({
+        chatId: -1001234567890,
+        isGroup: true,
+        resolvedThreadId: 99,
+        threadSpec: { id: 99, scope: "forum" },
+        msg: {
+          chat: { id: -1001234567890, type: "supergroup" },
+          message_id: 456,
+          message_thread_id: 99,
+          text: "Some text",
+        } as never,
+        ctxPayload: {
+          BodyForAgent: "Some text",
+        } as never,
+      }),
+    });
+
+    expect(deliverReplies).toHaveBeenCalled();
   });
 
   it("uses 30-char preview debounce for legacy block stream mode", async () => {
