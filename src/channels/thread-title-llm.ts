@@ -179,7 +179,7 @@ async function fetchGoogleTitle(params: {
       contents: [{ parts: [{ text: params.prompt }] }],
       generationConfig: {
         temperature: 0,
-        maxOutputTokens: 64,
+        maxOutputTokens: 15,
         thinkingConfig: { thinkingBudget: 0 },
       },
     }),
@@ -210,7 +210,7 @@ async function fetchAnthropicTitle(params: {
     },
     body: JSON.stringify({
       model: params.model,
-      max_tokens: 64,
+      max_tokens: 15,
       temperature: 0,
       messages: [{ role: "user", content: params.prompt }],
     }),
