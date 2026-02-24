@@ -140,9 +140,10 @@ export async function generateThreadTitleViaLLM(params: {
     return undefined;
   }
 
+  const defaultModel = params.cfg.agents?.defaults?.model;
+  const defaultModelRef = typeof defaultModel === "string" ? defaultModel : defaultModel?.primary;
   const configuredModelRef =
-    normalizeThreadTitleModelRef(params.modelRef) ??
-    normalizeThreadTitleModelRef(params.cfg.agents?.defaults?.model?.primary);
+    normalizeThreadTitleModelRef(params.modelRef) ?? normalizeThreadTitleModelRef(defaultModelRef);
   if (!configuredModelRef) {
     return undefined;
   }
@@ -200,7 +201,8 @@ export async function generateThreadTitleViaLLM(params: {
     });
     const rawText =
       result.payloads
-        ?.map((payload) => payload.text?.trim())
+        ?.filter((payload) => payload.isError !== true)
+        .map((payload) => payload.text?.trim())
         .find((text): text is string => Boolean(text && text.length > 0)) ?? "";
     return sanitizeLlmTitleCandidate(rawText);
   } catch (err) {

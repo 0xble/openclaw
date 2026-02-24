@@ -1,6 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { OpenClawConfig } from "../config/config.js";
-import { resolveThreadTitleLlmSettings } from "./thread-title-llm.js";
+
+const runEmbeddedPiAgent = vi.hoisted(() => vi.fn());
+
+vi.mock("../agents/pi-embedded.js", () => ({
+  runEmbeddedPiAgent,
+}));
+
+import { generateThreadTitleViaLLM, resolveThreadTitleLlmSettings } from "./thread-title-llm.js";
+
+function createConfig(defaultModel: string): OpenClawConfig {
+  return {
+    agents: {
+      defaults: {
+        model: defaultModel,
+      },
+    },
+  };
+}
 
 describe("resolveThreadTitleLlmSettings", () => {
   it("defaults to deterministic strategy", () => {
@@ -43,5 +60,49 @@ describe("resolveThreadTitleLlmSettings", () => {
     expect(settings.modelRef).toBe("google/gemini-3-flash");
     expect(settings.timeoutMs).toBe(9000);
     expect(settings.allowOverwriteCurrentTitle).toBe(true);
+  });
+});
+
+describe("generateThreadTitleViaLLM", () => {
+  beforeEach(() => {
+    runEmbeddedPiAgent.mockReset();
+  });
+
+  it("uses string default model refs", async () => {
+    runEmbeddedPiAgent.mockResolvedValue({
+      payloads: [{ text: '"Debug Nginx Config"' }],
+      meta: { durationMs: 5 },
+    });
+
+    const title = await generateThreadTitleViaLLM({
+      cfg: createConfig("google/gemini-2.0-flash"),
+      primaryText: "help me debug the nginx config",
+      maxChars: 24,
+      target: { channel: "telegram", conversationId: "chat", threadId: "42" },
+    });
+
+    expect(title).toBe("Debug Nginx Config");
+  });
+
+  it("returns undefined when embedded run yields only error payloads", async () => {
+    runEmbeddedPiAgent.mockResolvedValue({
+      payloads: [
+        {
+          text: "Request timed out before a response was generated.",
+          isError: true,
+        },
+      ],
+      meta: { durationMs: 5 },
+    });
+
+    const title = await generateThreadTitleViaLLM({
+      cfg: createConfig("google/gemini-2.0-flash"),
+      primaryText: "help me debug the nginx config",
+      maxChars: 24,
+      target: { channel: "telegram", conversationId: "chat", threadId: "42" },
+      timeoutMs: 1,
+    });
+
+    expect(title).toBeUndefined();
   });
 });
