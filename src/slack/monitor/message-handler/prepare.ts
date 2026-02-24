@@ -685,5 +685,8 @@ export async function prepareSlackMessage(params: {
     ackReactionMessageTs,
     ackReactionValue,
     ackReactionPromise,
+    isFirstThreadMessage: isThreadReply
+      ? threadSessionPreviousTimestamp == null
+      : previousTimestamp == null,
   };
 }

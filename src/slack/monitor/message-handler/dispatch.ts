@@ -6,6 +6,11 @@ import type { ReplyPayload } from "../../../auto-reply/types.js";
 import { removeAckReactionAfterReply } from "../../../channels/ack-reactions.js";
 import { logAckFailure, logTypingFailure } from "../../../channels/logging.js";
 import { createReplyPrefixOptions } from "../../../channels/reply-prefix.js";
+import {
+  generateThreadTitleViaLLM,
+  resolveThreadTitleLlmSettings,
+} from "../../../channels/thread-title-llm.js";
+import { applyThreadTitle } from "../../../channels/thread-title.js";
 import { createTypingCallbacks } from "../../../channels/typing.js";
 import { resolveStorePath, updateLastRoute } from "../../../config/sessions.js";
 import { danger, logVerbose, shouldLogVerbose } from "../../../globals.js";
@@ -18,6 +23,7 @@ import {
 } from "../../stream-mode.js";
 import type { SlackStreamSession } from "../../streaming.js";
 import { appendSlackStream, startSlackStream, stopSlackStream } from "../../streaming.js";
+import { createSlackThreadTitleProvider } from "../../thread-title-provider.js";
 import { resolveSlackThreadTargets } from "../../threading.js";
 import { createSlackReplyDeliveryPlan, deliverReplies, resolveSlackThreadTs } from "../replies.js";
 import type { PreparedSlackMessage } from "./types.js";
@@ -370,6 +376,50 @@ export async function dispatchPreparedSlackMessage(prepared: PreparedSlackMessag
             statusUpdateCount = 0;
           }
         };
+
+  const threadTitleLlm = resolveThreadTitleLlmSettings(cfg);
+  void applyThreadTitle({
+    provider: createSlackThreadTitleProvider({ app: ctx.app, botToken: ctx.botToken }),
+    target: {
+      channel: "slack",
+      accountId: route.accountId,
+      conversationId: message.channel,
+      threadId: statusThreadTs,
+      to: prepared.replyTarget,
+    },
+    primaryText:
+      typeof prepared.ctxPayload.ThreadStarterBody === "string"
+        ? prepared.ctxPayload.ThreadStarterBody
+        : typeof prepared.ctxPayload.BodyForAgent === "string"
+          ? prepared.ctxPayload.BodyForAgent
+          : undefined,
+    fallbackText:
+      typeof prepared.ctxPayload.BodyForAgent === "string"
+        ? prepared.ctxPayload.BodyForAgent
+        : message.text,
+    maxChars: 80,
+    isFirstMessage: prepared.isFirstThreadMessage,
+    strategy: threadTitleLlm.strategy,
+    allowOverwriteCurrentTitle: threadTitleLlm.allowOverwriteCurrentTitle,
+    generateLlmTitle: async ({ primaryText, fallbackText, maxChars, target }) => {
+      if (threadTitleLlm.strategy === "deterministic") {
+        return undefined;
+      }
+      return await generateThreadTitleViaLLM({
+        cfg,
+        primaryText,
+        fallbackText,
+        maxChars,
+        target,
+        modelRef: threadTitleLlm.modelRef,
+        timeoutMs: threadTitleLlm.timeoutMs,
+      });
+    },
+  }).catch((err) => {
+    logVerbose(
+      `slack: thread title failed for ${message.channel}:${statusThreadTs}: ${String(err)}`,
+    );
+  });
 
   const { queuedFinal, counts } = await dispatchInboundMessage({
     ctx: prepared.ctxPayload,
