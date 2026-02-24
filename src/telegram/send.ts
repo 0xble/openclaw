@@ -1281,7 +1281,10 @@ export async function renameForumTopicTelegram(
   // Accept topic-qualified targets (e.g. telegram:group:<id>:topic:<thread>)
   // but editForumTopic must always target the base supergroup chat id.
   const target = parseTelegramTarget(chatId);
-  const normalizedChatId = normalizeChatId(target.chatId);
+  const normalizedChatId = normalizeTelegramChatId(target.chatId);
+  if (!normalizedChatId) {
+    throw new Error("Telegram chat id is required");
+  }
   const client = resolveTelegramClientOptions(account);
   const api = opts.api ?? new Bot(token, client ? { client } : undefined).api;
 
