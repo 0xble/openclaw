@@ -420,6 +420,50 @@ export const dispatchTelegramMessage = async ({
 
   let queuedFinal = false;
 
+  const threadTitleTopicId =
+    threadSpec.scope === "forum" || threadSpec.scope === "dm" ? threadSpec.id : undefined;
+  if (typeof threadTitleTopicId === "number" && threadTitleTopicId > 1) {
+    const threadTitleLlm = resolveThreadTitleLlmSettings(cfg);
+    void applyThreadTitle({
+      provider: createTelegramThreadTitleProvider({
+        api: bot.api,
+        token: opts.token,
+        accountId: route.accountId,
+      }),
+      target: {
+        channel: "telegram",
+        accountId: route.accountId,
+        conversationId: String(chatId),
+        threadId: threadTitleTopicId,
+      },
+      primaryText:
+        typeof ctxPayload.BodyForAgent === "string" ? ctxPayload.BodyForAgent : undefined,
+      fallbackText: typeof ctxPayload.CommandBody === "string" ? ctxPayload.CommandBody : msg.text,
+      maxChars: 24,
+      isFirstMessage: context.isFirstMessage,
+      strategy: threadTitleLlm.strategy,
+      allowOverwriteCurrentTitle: threadTitleLlm.allowOverwriteCurrentTitle,
+      generateLlmTitle: async ({ primaryText, fallbackText, maxChars, target }) => {
+        if (threadTitleLlm.strategy === "deterministic") {
+          return undefined;
+        }
+        return await generateThreadTitleViaLLM({
+          cfg,
+          primaryText,
+          fallbackText,
+          maxChars,
+          target,
+          modelRef: threadTitleLlm.modelRef,
+          timeoutMs: threadTitleLlm.timeoutMs,
+        });
+      },
+    }).catch((err) => {
+      logVerbose(
+        `telegram: thread title failed for ${String(chatId)}:${String(threadTitleTopicId)}: ${String(err)}`,
+      );
+    });
+  }
+
   if (statusReactionController) {
     void statusReactionController.setThinking();
   }
@@ -689,46 +733,6 @@ export const dispatchTelegramMessage = async ({
           channel: "telegram",
           target: `${chatId}/${msg.message_id}`,
           error: err,
-        });
-      },
-    });
-  }
-
-  const threadTitleTopicId =
-    threadSpec.scope === "forum" || threadSpec.scope === "dm" ? threadSpec.id : undefined;
-  if (typeof threadTitleTopicId === "number" && threadTitleTopicId > 1) {
-    const threadTitleLlm = resolveThreadTitleLlmSettings(cfg);
-    await applyThreadTitle({
-      provider: createTelegramThreadTitleProvider({
-        api: bot.api,
-        token: opts.token,
-        accountId: route.accountId,
-      }),
-      target: {
-        channel: "telegram",
-        accountId: route.accountId,
-        conversationId: String(chatId),
-        threadId: threadTitleTopicId,
-      },
-      primaryText:
-        typeof ctxPayload.BodyForAgent === "string" ? ctxPayload.BodyForAgent : undefined,
-      fallbackText: typeof ctxPayload.CommandBody === "string" ? ctxPayload.CommandBody : msg.text,
-      maxChars: 24,
-      isFirstMessage: context.isFirstMessage,
-      strategy: threadTitleLlm.strategy,
-      allowOverwriteCurrentTitle: threadTitleLlm.allowOverwriteCurrentTitle,
-      generateLlmTitle: async ({ primaryText, fallbackText, maxChars, target }) => {
-        if (threadTitleLlm.strategy === "deterministic") {
-          return undefined;
-        }
-        return await generateThreadTitleViaLLM({
-          cfg,
-          primaryText,
-          fallbackText,
-          maxChars,
-          target,
-          modelRef: threadTitleLlm.modelRef,
-          timeoutMs: threadTitleLlm.timeoutMs,
         });
       },
     });
