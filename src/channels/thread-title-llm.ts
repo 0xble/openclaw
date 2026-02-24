@@ -1,19 +1,10 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import {
-  resolveAgentDir,
-  resolveAgentWorkspaceDir,
-  resolveDefaultAgentId,
-} from "../agents/agent-scope.js";
 import { parseModelRef } from "../agents/model-selection.js";
-import { runEmbeddedPiAgent } from "../agents/pi-embedded.js";
 import type { OpenClawConfig } from "../config/config.js";
 import { createSubsystemLogger } from "../logging/subsystem.js";
 import type { ThreadTitleStrategy, ThreadTitleTarget } from "./thread-title.js";
 
 const log = createSubsystemLogger("thread-title-llm");
-const DEFAULT_TIMEOUT_MS = 12_000;
+const DEFAULT_TIMEOUT_MS = 3_000;
 const SUPPORTED_PROVIDERS = new Set(["google", "anthropic"]);
 
 function normalizeStrategy(raw?: string): ThreadTitleStrategy {
@@ -106,7 +97,7 @@ export function resolveThreadTitleLlmSettings(
   );
   const timeoutMs =
     Number.isFinite(timeoutRaw) && timeoutRaw > 0
-      ? Math.min(60_000, Math.max(3_000, timeoutRaw))
+      ? Math.min(60_000, Math.max(1, timeoutRaw))
       : DEFAULT_TIMEOUT_MS;
   const allowOverwriteRaw = resolveThreadTitleEnvValue(
     cfg,
@@ -124,6 +115,120 @@ export function resolveThreadTitleLlmSettings(
     allowOverwriteCurrentTitle,
   };
 }
+
+// ---------------------------------------------------------------------------
+// API key resolution
+// ---------------------------------------------------------------------------
+
+function resolveGoogleApiKey(
+  cfg: OpenClawConfig | undefined,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  return (
+    resolveThreadTitleEnvValue(cfg, env, "GEMINI_API_KEY") ??
+    resolveThreadTitleEnvValue(cfg, env, "GOOGLE_API_KEY")
+  );
+}
+
+function resolveAnthropicApiKey(
+  cfg: OpenClawConfig | undefined,
+  env: NodeJS.ProcessEnv,
+): string | undefined {
+  return resolveThreadTitleEnvValue(cfg, env, "ANTHROPIC_API_KEY");
+}
+
+// ---------------------------------------------------------------------------
+// Prompt
+// ---------------------------------------------------------------------------
+
+function buildTitlePrompt(maxChars: number, sourceText: string): string {
+  return [
+    `Name a chat topic in 13-${maxChars} chars. Title case. Output ONLY the name.`,
+    "Capture the action and subject. Never abbreviate words except: API, CLI, DB, TG, CI, UI.",
+    "",
+    '"turn on the living room lights" -> "Turn On Lights"',
+    '"can you check my recent emails" -> "Check Emails"',
+    '"the deploy pipeline is broken" -> "Fix Deploy"',
+    '"how should i configure nginx" -> "Config Nginx"',
+    '"send a message to the team" -> "Team Message"',
+    '"why does the icon look wrong" -> "Fix Icon"',
+    '"start the migration to v2" -> "Migrate To V2"',
+    '"cleanup after testing" -> "Cleanup Testing"',
+    '"help me write a blog post" -> "Write Blog Post"',
+    '"what is the weather today" -> "Weather Today"',
+    "",
+    sourceText,
+  ].join("\n");
+}
+
+// ---------------------------------------------------------------------------
+// Provider-specific fetch helpers
+// ---------------------------------------------------------------------------
+
+async function fetchGoogleTitle(params: {
+  model: string;
+  prompt: string;
+  apiKey: string;
+  signal: AbortSignal;
+}): Promise<string | undefined> {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${params.model}:generateContent?key=${params.apiKey}`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: params.prompt }] }],
+      generationConfig: {
+        temperature: 0,
+        maxOutputTokens: 64,
+        thinkingConfig: { thinkingBudget: 0 },
+      },
+    }),
+    signal: params.signal,
+  });
+  if (!resp.ok) {
+    log.debug(`google title API ${resp.status}: ${await resp.text().catch(() => "")}`);
+    return undefined;
+  }
+  const json = (await resp.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  return json.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || undefined;
+}
+
+async function fetchAnthropicTitle(params: {
+  model: string;
+  prompt: string;
+  apiKey: string;
+  signal: AbortSignal;
+}): Promise<string | undefined> {
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": params.apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify({
+      model: params.model,
+      max_tokens: 64,
+      temperature: 0,
+      messages: [{ role: "user", content: params.prompt }],
+    }),
+    signal: params.signal,
+  });
+  if (!resp.ok) {
+    log.debug(`anthropic title API ${resp.status}: ${await resp.text().catch(() => "")}`);
+    return undefined;
+  }
+  const json = (await resp.json()) as {
+    content?: Array<{ text?: string }>;
+  };
+  return json.content?.[0]?.text?.trim() || undefined;
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
 
 export async function generateThreadTitleViaLLM(params: {
   cfg: OpenClawConfig;
@@ -152,6 +257,16 @@ export async function generateThreadTitleViaLLM(params: {
     return undefined;
   }
 
+  const env = process.env;
+  const apiKey =
+    parsedRef.provider === "google"
+      ? resolveGoogleApiKey(params.cfg, env)
+      : resolveAnthropicApiKey(params.cfg, env);
+  if (!apiKey) {
+    log.debug(`no API key for ${parsedRef.provider}, skipping LLM title generation`);
+    return undefined;
+  }
+
   const sourceText = [primaryText, fallbackText]
     .filter((entry): entry is string => Boolean(entry))
     .join("\n\n")
@@ -160,57 +275,40 @@ export async function generateThreadTitleViaLLM(params: {
     return undefined;
   }
 
-  let tempDir: string | undefined;
+  const prompt = buildTitlePrompt(params.maxChars, sourceText);
+  const timeoutMs = params.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   try {
-    tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "openclaw-thread-title-"));
-    const sessionFile = path.join(tempDir, "session.jsonl");
-    const agentId = resolveDefaultAgentId(params.cfg);
-    const workspaceDir = resolveAgentWorkspaceDir(params.cfg, agentId);
-    const agentDir = resolveAgentDir(params.cfg, agentId);
-    const prompt = [
-      `Name a chat topic in 13-${params.maxChars} chars. Title case. Output ONLY the name.`,
-      "Capture the action and subject. Never abbreviate words except: API, CLI, DB, TG, CI, UI.",
-      "",
-      '"turn on the living room lights" -> "Turn On Lights"',
-      '"can you check my recent emails" -> "Check Emails"',
-      '"the deploy pipeline is broken" -> "Fix Deploy"',
-      '"how should i configure nginx" -> "Config Nginx"',
-      '"send a message to the team" -> "Team Message"',
-      '"why does the icon look wrong" -> "Fix Icon"',
-      '"start the migration to v2" -> "Migrate To V2"',
-      '"cleanup after testing" -> "Cleanup Testing"',
-      '"help me write a blog post" -> "Write Blog Post"',
-      '"what is the weather today" -> "Weather Today"',
-      "",
-      sourceText,
-    ].join("\n");
-    const result = await runEmbeddedPiAgent({
-      sessionId: `thread-title-generator-${Date.now()}`,
-      sessionKey: "temp:thread-title-generator",
-      agentId,
-      sessionFile,
-      workspaceDir,
-      agentDir,
-      config: params.cfg,
-      prompt,
-      disableTools: true,
-      provider: parsedRef.provider,
-      model: parsedRef.model,
-      timeoutMs: params.timeoutMs ?? DEFAULT_TIMEOUT_MS,
-      runId: `thread-title-gen-${Date.now()}`,
-    });
     const rawText =
-      result.payloads
-        ?.filter((payload) => payload.isError !== true)
-        .map((payload) => payload.text?.trim())
-        .find((text): text is string => Boolean(text && text.length > 0)) ?? "";
+      parsedRef.provider === "google"
+        ? await fetchGoogleTitle({
+            model: parsedRef.model,
+            prompt,
+            apiKey,
+            signal: controller.signal,
+          })
+        : await fetchAnthropicTitle({
+            model: parsedRef.model,
+            prompt,
+            apiKey,
+            signal: controller.signal,
+          });
+    if (!rawText) {
+      return undefined;
+    }
     return sanitizeLlmTitleCandidate(rawText);
   } catch (err) {
-    log.debug(`thread title generation failed: ${String(err)}`);
+    const isAbort =
+      err instanceof DOMException ||
+      (err instanceof Error && err.name === "AbortError") ||
+      (err instanceof TypeError && String(err.message).includes("abort"));
+    log.debug(
+      `thread title generation ${isAbort ? "timed out" : "failed"} (${parsedRef.provider}/${parsedRef.model}): ${String(err)}`,
+    );
     return undefined;
   } finally {
-    if (tempDir) {
-      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
-    }
+    clearTimeout(timer);
   }
 }
