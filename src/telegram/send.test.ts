@@ -197,6 +197,10 @@ describe("sendMessageTelegram", () => {
     for (const testCase of cases) {
       botCtorSpy.mockClear();
       loadConfig.mockReturnValue(testCase.cfg);
+      botApi.sendMessage.mockResolvedValue({
+        message_id: 1,
+        chat: { id: "123" },
+      });
       await sendMessageTelegram("123", "hi", testCase.opts);
       expect(botCtorSpy, testCase.name).toHaveBeenCalledWith(
         "tok",
@@ -324,6 +328,40 @@ describe("sendMessageTelegram", () => {
       await sendMessageTelegram("123", testCase.text, { token: "tok", api });
       expect(testCase.sendMessage.mock.calls, testCase.name).toEqual(testCase.expectedCalls);
     }
+  });
+
+  it("fails when Telegram text send returns no message_id", async () => {
+    const sendMessage = vi.fn().mockResolvedValue({
+      chat: { id: "123" },
+    });
+    const api = { sendMessage } as unknown as {
+      sendMessage: typeof sendMessage;
+    };
+
+    await expect(
+      sendMessageTelegram("123", "hi", {
+        token: "tok",
+        api,
+      }),
+    ).rejects.toThrow(/returned no message_id/i);
+  });
+
+  it("fails when Telegram media send returns no message_id", async () => {
+    mockLoadedMedia({ contentType: "image/png", fileName: "photo.png" });
+    const sendPhoto = vi.fn().mockResolvedValue({
+      chat: { id: "123" },
+    });
+    const api = { sendPhoto } as unknown as {
+      sendPhoto: typeof sendPhoto;
+    };
+
+    await expect(
+      sendMessageTelegram("123", "caption", {
+        token: "tok",
+        api,
+        mediaUrl: "https://example.com/photo.png",
+      }),
+    ).rejects.toThrow(/returned no message_id/i);
   });
 
   it("uses native fetch for BAN compatibility when api is omitted", async () => {
@@ -1243,6 +1281,23 @@ describe("sendStickerTelegram", () => {
     expect(sendSticker).toHaveBeenNthCalledWith(2, chatId, "fileId123", undefined);
     expect(res.messageId).toBe("109");
   });
+
+  it("fails when sticker send returns no message_id", async () => {
+    const chatId = "123";
+    const sendSticker = vi.fn().mockResolvedValue({
+      chat: { id: chatId },
+    });
+    const api = { sendSticker } as unknown as {
+      sendSticker: typeof sendSticker;
+    };
+
+    await expect(
+      sendStickerTelegram(chatId, "fileId123", {
+        token: "tok",
+        api,
+      }),
+    ).rejects.toThrow(/returned no message_id/i);
+  });
 });
 
 describe("shared send behaviors", () => {
@@ -1504,6 +1559,20 @@ describe("sendPollTelegram", () => {
     ).rejects.toThrow(/durationHours is not supported/i);
 
     expect(api.sendPoll).not.toHaveBeenCalled();
+  });
+
+  it("fails when poll send returns no message_id", async () => {
+    const api = {
+      sendPoll: vi.fn(async () => ({ chat: { id: 555 }, poll: { id: "p1" } })),
+    };
+
+    await expect(
+      sendPollTelegram(
+        "123",
+        { question: "Q", options: ["A", "B"] },
+        { token: "t", api: api as unknown as Bot["api"] },
+      ),
+    ).rejects.toThrow(/returned no message_id/i);
   });
 });
 
