@@ -1,0 +1,3 @@
+#!/bin/sh
+echo "manual: iOS companion app"
+echo "Gateway CLI stays at upstream npm install"
