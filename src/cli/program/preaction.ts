@@ -127,6 +127,9 @@ export function registerPreActionHooks(program: Command, programVersion: string)
       return;
     }
     const suppressDoctorStdout = isJsonOutputMode(commandPath, argv);
+    if (suppressDoctorStdout) {
+      process.env.OPENCLAW_SUPPRESS_NOTES = "1";
+    }
     const { ensureConfigReady } = await loadConfigGuardModule();
     await ensureConfigReady({
       runtime: defaultRuntime,

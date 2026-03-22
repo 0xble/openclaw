@@ -200,8 +200,10 @@ describe("registerPreActionHooks", () => {
       commandPath: ["update", "status"],
       suppressDoctorStdout: true,
     });
+    expect(process.env.OPENCLAW_SUPPRESS_NOTES).toBe("1");
 
     vi.clearAllMocks();
+    delete process.env.OPENCLAW_SUPPRESS_NOTES;
     await runPreAction({
       parseArgv: ["config", "set", "gateway.auth.mode", "{bad", "--json"],
       processArgv: ["node", "openclaw", "config", "set", "gateway.auth.mode", "{bad", "--json"],
@@ -211,6 +213,7 @@ describe("registerPreActionHooks", () => {
       runtime: runtimeMock,
       commandPath: ["config", "set"],
     });
+    expect(process.env.OPENCLAW_SUPPRESS_NOTES).toBeUndefined();
   });
 
   it("bypasses config guard for config validate", async () => {
