@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+bin_path="$HOME/.local/bin/openclaw"
+
+[ -x "$bin_path" ]
+"$bin_path" --version | /usr/bin/grep -Fq 'OpenClaw'
+
+if "$bin_path" gateway status --help | /usr/bin/grep -Fq -- '--require-rpc'; then
+  "$bin_path" gateway status --deep --require-rpc >/dev/null
+else
+  "$bin_path" gateway status --deep >/dev/null
+fi
+
+run_json="$("$bin_path" agent --agent brianle --message 'Reply with exactly OK.' --json)"
+printf '%s\n' "$run_json" | jq -e '.status == "ok"' >/dev/null
+printf '%s\n' "$run_json" | /usr/bin/grep -Fq '"text": "OK"'
+
+echo "smoke ok: openclaw"
