@@ -12,6 +12,9 @@ else
   "$bin_path" gateway status --deep >/dev/null
 fi
 
+models_json="$("$bin_path" gateway call models.list --json)"
+printf '%s\n' "$models_json" | jq -e '.models | type == "array" and length > 0' >/dev/null
+
 run_json="$("$bin_path" agent --agent brianle --message 'Reply with exactly OK.' --json)"
 printf '%s\n' "$run_json" | jq -e '.status == "ok"' >/dev/null
 printf '%s\n' "$run_json" | /usr/bin/grep -Fq '"text": "OK"'

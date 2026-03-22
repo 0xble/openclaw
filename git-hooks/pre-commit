@@ -46,4 +46,20 @@ if [ "${#format_files[@]}" -gt 0 ]; then
   "$RUN_NODE_TOOL" oxfmt --write -- "${format_files[@]}"
 fi
 
-git add -- "${files[@]}"
+tracked_files=()
+new_files=()
+for file in "${files[@]}"; do
+  if git ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then
+    tracked_files+=("$file")
+    continue
+  fi
+  new_files+=("$file")
+done
+
+if [ "${#tracked_files[@]}" -gt 0 ]; then
+  git add -u -- "${tracked_files[@]}"
+fi
+
+if [ "${#new_files[@]}" -gt 0 ]; then
+  git add -- "${new_files[@]}"
+fi
