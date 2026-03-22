@@ -447,9 +447,9 @@ describe("shared Node TLS env defaults", () => {
     expect(env.NODE_EXTRA_CA_CERTS).toBe("/custom/certs/ca.pem");
   });
 
-  it.each(builders)("$name defaults NODE_USE_SYSTEM_CA=1 on macOS", ({ build }) => {
+  it.each(builders)("$name does not default NODE_USE_SYSTEM_CA on macOS", ({ build }) => {
     const env = build({ HOME: "/home/user" }, "darwin");
-    expect(env.NODE_USE_SYSTEM_CA).toBe("1");
+    expect(env.NODE_USE_SYSTEM_CA).toBeUndefined();
   });
 
   it.each(builders)("$name does not default NODE_USE_SYSTEM_CA on non-macOS", ({ build }) => {

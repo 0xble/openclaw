@@ -324,7 +324,7 @@ function resolveSharedServiceEnvironmentFields(
   // works correctly when running as a LaunchAgent without extra user configuration.
   const nodeCaCerts =
     env.NODE_EXTRA_CA_CERTS ?? (platform === "darwin" ? "/etc/ssl/cert.pem" : undefined);
-  const nodeUseSystemCa = env.NODE_USE_SYSTEM_CA ?? (platform === "darwin" ? "1" : undefined);
+  const nodeUseSystemCa = env.NODE_USE_SYSTEM_CA;
   return {
     stateDir,
     configPath,

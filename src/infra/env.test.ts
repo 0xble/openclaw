@@ -13,6 +13,18 @@ vi.mock("../logging/subsystem.js", () => ({
 
 import { isTruthyEnvValue, logAcceptedEnvOption, normalizeEnv, normalizeZaiEnv } from "./env.js";
 
+function withPlatform<T>(platform: NodeJS.Platform, fn: () => T): T {
+  const originalPlatformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: platform, configurable: true });
+  try {
+    return fn();
+  } finally {
+    if (originalPlatformDescriptor) {
+      Object.defineProperty(process, "platform", originalPlatformDescriptor);
+    }
+  }
+}
+
 describe("normalizeZaiEnv", () => {
   it("copies Z_AI_API_KEY to ZAI_API_KEY when missing", () => {
     withEnv({ ZAI_API_KEY: "", Z_AI_API_KEY: "zai-legacy" }, () => {
@@ -129,6 +141,68 @@ describe("normalizeEnv", () => {
     withEnv({ ZAI_API_KEY: "", Z_AI_API_KEY: "zai-legacy" }, () => {
       normalizeEnv();
       expect(process.env.ZAI_API_KEY).toBe("zai-legacy");
+    });
+  });
+
+  it("drops inherited NODE_USE_SYSTEM_CA for darwin service runtimes", () => {
+    withPlatform("darwin", () => {
+      withEnv(
+        {
+          OPENCLAW_SERVICE_KIND: "gateway",
+          NODE_USE_SYSTEM_CA: "1",
+          NODE_EXTRA_CA_CERTS: "/etc/ssl/cert.pem",
+        },
+        () => {
+          normalizeEnv();
+          expect(process.env.NODE_USE_SYSTEM_CA).toBeUndefined();
+        },
+      );
+    });
+  });
+
+  it("preserves explicit custom CA bundles for darwin service runtimes", () => {
+    withPlatform("darwin", () => {
+      withEnv(
+        {
+          OPENCLAW_SERVICE_KIND: "gateway",
+          NODE_USE_SYSTEM_CA: "1",
+          NODE_EXTRA_CA_CERTS: "/custom/certs/ca.pem",
+        },
+        () => {
+          normalizeEnv();
+          expect(process.env.NODE_USE_SYSTEM_CA).toBe("1");
+        },
+      );
+    });
+  });
+
+  it("does not touch NODE_USE_SYSTEM_CA outside darwin service runtimes", () => {
+    withPlatform("linux", () => {
+      withEnv(
+        {
+          OPENCLAW_SERVICE_KIND: "gateway",
+          NODE_USE_SYSTEM_CA: "1",
+          NODE_EXTRA_CA_CERTS: "/etc/ssl/cert.pem",
+        },
+        () => {
+          normalizeEnv();
+          expect(process.env.NODE_USE_SYSTEM_CA).toBe("1");
+        },
+      );
+    });
+
+    withPlatform("darwin", () => {
+      withEnv(
+        {
+          OPENCLAW_SERVICE_KIND: "",
+          NODE_USE_SYSTEM_CA: "1",
+          NODE_EXTRA_CA_CERTS: "/etc/ssl/cert.pem",
+        },
+        () => {
+          normalizeEnv();
+          expect(process.env.NODE_USE_SYSTEM_CA).toBe("1");
+        },
+      );
     });
   });
 });

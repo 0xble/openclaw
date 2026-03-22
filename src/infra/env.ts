@@ -43,10 +43,28 @@ export function normalizeZaiEnv(): void {
   }
 }
 
+function normalizeDarwinServiceNodeCaEnv(): void {
+  if (process.platform !== "darwin") {
+    return;
+  }
+  if (!process.env.OPENCLAW_SERVICE_KIND?.trim()) {
+    return;
+  }
+  if (process.env.NODE_USE_SYSTEM_CA !== "1") {
+    return;
+  }
+  const extraCaCerts = process.env.NODE_EXTRA_CA_CERTS?.trim();
+  if (extraCaCerts && extraCaCerts !== "/etc/ssl/cert.pem") {
+    return;
+  }
+  delete process.env.NODE_USE_SYSTEM_CA;
+}
+
 export function isTruthyEnvValue(value?: string): boolean {
   return parseBooleanValue(value) === true;
 }
 
 export function normalizeEnv(): void {
   normalizeZaiEnv();
+  normalizeDarwinServiceNodeCaEnv();
 }
