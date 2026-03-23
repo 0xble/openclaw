@@ -9,6 +9,7 @@ import { resolveDefaultModelForAgent } from "../agents/model-selection.js";
 import { resolveChunkMode } from "../auto-reply/chunk.js";
 import { clearHistoryEntriesIfEnabled } from "../auto-reply/reply/history.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
+import { HEARTBEAT_TOKEN, isSilentReplyText } from "../auto-reply/tokens.js";
 import type { ReplyPayload } from "../auto-reply/types.js";
 import { removeAckReactionAfterReply } from "../channels/ack-reactions.js";
 import { logAckFailure, logTypingFailure } from "../channels/logging.js";
@@ -48,6 +49,10 @@ import { editMessageTelegram } from "./send.js";
 import { cacheSticker, describeStickerImage } from "./sticker-cache.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
+
+function isIntentionalSilentReplyText(text: string | undefined): boolean {
+  return isSilentReplyText(text) || isSilentReplyText(text, HEARTBEAT_TOKEN);
+}
 
 /** Minimum chars before sending first streaming message (improves push notification UX) */
 const DRAFT_MIN_INITIAL_CHARS = 30;
@@ -509,6 +514,7 @@ export const dispatchTelegramMessage = async ({
   });
 
   let queuedFinal = false;
+  let finalReplyWasIntentionallySilent = false;
 
   if (statusReactionController) {
     void statusReactionController.setThinking();
@@ -648,8 +654,15 @@ export const dispatchTelegramMessage = async ({
             await flushBufferedFinalAnswer();
           }
         },
-        onSkip: (_payload, info) => {
-          if (info.reason !== "silent") {
+        onSkip: (payload, info) => {
+          const skipWasIntentionallySilent =
+            info.reason === "silent" ||
+            info.reason === "heartbeat" ||
+            isIntentionalSilentReplyText(payload.text);
+          if (info.kind === "final" && skipWasIntentionallySilent) {
+            finalReplyWasIntentionallySilent = true;
+          }
+          if (!skipWasIntentionallySilent) {
             deliveryState.markNonSilentSkip();
           }
         },
@@ -796,7 +809,8 @@ export const dispatchTelegramMessage = async ({
   const deliverySummary = deliveryState.snapshot();
   if (
     dispatchError ||
-    (!deliverySummary.delivered &&
+    (!finalReplyWasIntentionallySilent &&
+      !deliverySummary.delivered &&
       (deliverySummary.skippedNonSilent > 0 || deliverySummary.failedNonSilent > 0))
   ) {
     const fallbackText = dispatchError

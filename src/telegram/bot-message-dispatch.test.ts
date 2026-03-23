@@ -1910,11 +1910,11 @@ describe("dispatchTelegramMessage draft streaming", () => {
     expect(draftStream.clear).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back when all finals are skipped and clears preview", async () => {
+  it("falls back when the final reply is skipped for a non-silent reason and clears preview", async () => {
     const draftStream = createDraftStream(999);
     createTelegramDraftStream.mockReturnValue(draftStream);
     dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
-      dispatcherOptions.onSkip?.({ text: "" }, { reason: "no_reply", kind: "final" });
+      dispatcherOptions.onSkip?.({ text: "" }, { reason: "empty", kind: "final" });
       return { queuedFinal: false };
     });
     deliverReplies.mockResolvedValueOnce({ delivered: true });
@@ -1930,6 +1930,38 @@ describe("dispatchTelegramMessage draft streaming", () => {
         ],
       }),
     );
+    expect(draftStream.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fall back when the final reply is NO_REPLY after earlier skipped output", async () => {
+    const draftStream = createDraftStream(999);
+    createTelegramDraftStream.mockReturnValue(draftStream);
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      // Earlier skipped output should not force a visible fallback when the
+      // agent intentionally ends the turn with NO_REPLY after a tool-only action.
+      dispatcherOptions.onSkip?.({ text: "" }, { reason: "empty", kind: "block" });
+      dispatcherOptions.onSkip?.({ text: "NO_REPLY" }, { reason: "silent", kind: "final" });
+      return { queuedFinal: false };
+    });
+
+    await dispatchWithContext({ context: createContext() });
+
+    expect(deliverReplies).not.toHaveBeenCalled();
+    expect(draftStream.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not fall back when the final reply is HEARTBEAT_OK", async () => {
+    const draftStream = createDraftStream(999);
+    createTelegramDraftStream.mockReturnValue(draftStream);
+    dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
+      dispatcherOptions.onSkip?.({ text: "" }, { reason: "empty", kind: "block" });
+      dispatcherOptions.onSkip?.({ text: "HEARTBEAT_OK" }, { reason: "heartbeat", kind: "final" });
+      return { queuedFinal: false };
+    });
+
+    await dispatchWithContext({ context: createContext() });
+
+    expect(deliverReplies).not.toHaveBeenCalled();
     expect(draftStream.clear).toHaveBeenCalledTimes(1);
   });
 

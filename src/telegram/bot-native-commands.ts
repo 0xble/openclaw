@@ -14,6 +14,7 @@ import {
 import { finalizeInboundContext } from "../auto-reply/reply/inbound-context.js";
 import { dispatchReplyWithBufferedBlockDispatcher } from "../auto-reply/reply/provider-dispatcher.js";
 import { listSkillCommandsForAgents } from "../auto-reply/skill-commands.js";
+import { HEARTBEAT_TOKEN, isSilentReplyText } from "../auto-reply/tokens.js";
 import { resolveCommandAuthorizedFromAuthorizers } from "../channels/command-gating.js";
 import { resolveNativeCommandSessionTargets } from "../channels/native-command-session-targets.js";
 import { createReplyPrefixOptions } from "../channels/reply-prefix.js";
@@ -74,6 +75,10 @@ import { resolveTelegramGroupPromptSettings } from "./group-config-helpers.js";
 import { buildInlineKeyboard } from "./send.js";
 
 const EMPTY_RESPONSE_FALLBACK = "No response generated. Please try again.";
+
+function isIntentionalSilentReplyText(text: string | undefined): boolean {
+  return isSilentReplyText(text) || isSilentReplyText(text, HEARTBEAT_TOKEN);
+}
 
 type TelegramNativeCommandContext = Context & { match?: string };
 
@@ -739,6 +744,7 @@ export const registerTelegramNativeCommands = ({
             delivered: false,
             skippedNonSilent: 0,
           };
+          let finalReplyWasIntentionallySilent = false;
 
           const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
             cfg,
@@ -771,8 +777,15 @@ export const registerTelegramNativeCommands = ({
                   deliveryState.delivered = true;
                 }
               },
-              onSkip: (_payload, info) => {
-                if (info.reason !== "silent") {
+              onSkip: (payload, info) => {
+                const skipWasIntentionallySilent =
+                  info.reason === "silent" ||
+                  info.reason === "heartbeat" ||
+                  isIntentionalSilentReplyText(payload.text);
+                if (info.kind === "final" && skipWasIntentionallySilent) {
+                  finalReplyWasIntentionallySilent = true;
+                }
+                if (!skipWasIntentionallySilent) {
                   deliveryState.skippedNonSilent += 1;
                 }
               },
@@ -786,7 +799,11 @@ export const registerTelegramNativeCommands = ({
               onModelSelected,
             },
           });
-          if (!deliveryState.delivered && deliveryState.skippedNonSilent > 0) {
+          if (
+            !finalReplyWasIntentionallySilent &&
+            !deliveryState.delivered &&
+            deliveryState.skippedNonSilent > 0
+          ) {
             await deliverReplies({
               replies: [{ text: EMPTY_RESPONSE_FALLBACK }],
               ...deliveryBaseOptions,
