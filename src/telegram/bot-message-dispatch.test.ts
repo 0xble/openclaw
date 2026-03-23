@@ -1915,7 +1915,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     createTelegramDraftStream.mockReturnValue(draftStream);
     dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
       dispatcherOptions.onSkip?.({ text: "" }, { reason: "empty", kind: "final" });
-      return { queuedFinal: false };
+      return { queuedFinal: false, counts: { tool: 0, block: 0, final: 0 } };
     });
     deliverReplies.mockResolvedValueOnce({ delivered: true });
 
@@ -1941,7 +1941,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
       // agent intentionally ends the turn with NO_REPLY after a tool-only action.
       dispatcherOptions.onSkip?.({ text: "" }, { reason: "empty", kind: "block" });
       dispatcherOptions.onSkip?.({ text: "NO_REPLY" }, { reason: "silent", kind: "final" });
-      return { queuedFinal: false };
+      return { queuedFinal: false, counts: { tool: 0, block: 0, final: 0 } };
     });
 
     await dispatchWithContext({ context: createContext() });
@@ -1956,7 +1956,7 @@ describe("dispatchTelegramMessage draft streaming", () => {
     dispatchReplyWithBufferedBlockDispatcher.mockImplementation(async ({ dispatcherOptions }) => {
       dispatcherOptions.onSkip?.({ text: "" }, { reason: "empty", kind: "block" });
       dispatcherOptions.onSkip?.({ text: "HEARTBEAT_OK" }, { reason: "heartbeat", kind: "final" });
-      return { queuedFinal: false };
+      return { queuedFinal: false, counts: { tool: 0, block: 0, final: 0 } };
     });
 
     await dispatchWithContext({ context: createContext() });
@@ -2080,6 +2080,30 @@ describe("dispatchTelegramMessage draft streaming", () => {
 
     // Verify fallback was attempted and preview still cleaned up
     expect(deliverReplies).toHaveBeenCalledTimes(2);
+    expect(draftStream.clear).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back when dispatch completes successfully but never queues visible output", async () => {
+    const draftStream = createDraftStream(999);
+    createTelegramDraftStream.mockReturnValue(draftStream);
+    dispatchReplyWithBufferedBlockDispatcher.mockResolvedValue({
+      queuedFinal: false,
+      counts: { tool: 0, block: 0, final: 0 },
+      completedWithoutVisibleOutput: true,
+    });
+    deliverReplies.mockResolvedValueOnce({ delivered: true });
+
+    await dispatchWithContext({ context: createContext() });
+
+    expect(deliverReplies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        replies: [
+          expect.objectContaining({
+            text: expect.stringContaining("No response"),
+          }),
+        ],
+      }),
+    );
     expect(draftStream.clear).toHaveBeenCalledTimes(1);
   });
 
