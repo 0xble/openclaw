@@ -14,7 +14,7 @@ describe("plugins cli list", () => {
   });
 
   it("includes imported state in JSON output", async () => {
-    buildPluginSnapshotReport.mockReturnValue({
+    buildPluginDiagnosticsReport.mockReturnValue({
       workspaceDir: "/workspace",
       plugins: [
         createPluginRecord({
@@ -29,7 +29,8 @@ describe("plugins cli list", () => {
 
     await runPluginsCommand(["plugins", "list", "--json"]);
 
-    expect(buildPluginSnapshotReport).toHaveBeenCalledWith();
+    expect(buildPluginDiagnosticsReport).toHaveBeenCalledWith();
+    expect(buildPluginSnapshotReport).not.toHaveBeenCalled();
 
     expect(JSON.parse(runtimeLogs[0] ?? "null")).toEqual({
       workspaceDir: "/workspace",

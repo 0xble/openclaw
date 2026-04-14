@@ -61,7 +61,9 @@ const hoisted = vi.hoisted(() => {
   const sendMessageMock = vi.fn();
   const cancelSessionMock = vi.fn();
   const killSubagentRunAdminMock = vi.fn();
+  const abortReplyRunBySessionKeyMock = vi.fn();
   return {
+    abortReplyRunBySessionKeyMock,
     sendMessageMock,
     cancelSessionMock,
     killSubagentRunAdminMock,
@@ -208,6 +210,7 @@ describe("task-registry", () => {
       sendMessage: hoisted.sendMessageMock,
     });
     setTaskRegistryControlRuntimeForTests({
+      abortReplyRunBySessionKey: hoisted.abortReplyRunBySessionKeyMock,
       getAcpSessionManager: () => ({
         cancelSession: hoisted.cancelSessionMock,
       }),
@@ -234,6 +237,7 @@ describe("task-registry", () => {
     hoisted.sendMessageMock.mockReset();
     hoisted.cancelSessionMock.mockReset();
     hoisted.killSubagentRunAdminMock.mockReset();
+    hoisted.abortReplyRunBySessionKeyMock.mockReset();
   });
 
   it("updates task status from lifecycle events", async () => {
@@ -1981,11 +1985,12 @@ describe("task-registry", () => {
     });
   });
 
-  it("cancels CLI-tracked tasks in the registry without ACP or subagent teardown", async () => {
+  it("cancels CLI-tracked tasks and aborts active reply operations", async () => {
     await withTaskRegistryTempDir(async (root) => {
       process.env.OPENCLAW_STATE_DIR = root;
       hoisted.cancelSessionMock.mockClear();
       hoisted.killSubagentRunAdminMock.mockClear();
+      hoisted.abortReplyRunBySessionKeyMock.mockClear();
 
       const task = createTaskRecord({
         runtime: "cli",
@@ -2009,6 +2014,7 @@ describe("task-registry", () => {
 
       expect(hoisted.cancelSessionMock).not.toHaveBeenCalled();
       expect(hoisted.killSubagentRunAdminMock).not.toHaveBeenCalled();
+      expect(hoisted.abortReplyRunBySessionKeyMock).toHaveBeenCalledWith("agent:main:main");
       expect(result).toMatchObject({
         found: true,
         cancelled: true,
@@ -2033,6 +2039,7 @@ describe("task-registry", () => {
   it("cancels CLI-tracked tasks without childSessionKey", async () => {
     await withTaskRegistryTempDir(async (root) => {
       process.env.OPENCLAW_STATE_DIR = root;
+      hoisted.abortReplyRunBySessionKeyMock.mockClear();
       const task = createTaskRecord({
         runtime: "cli",
         ownerKey: "agent:main:main",
@@ -2060,6 +2067,7 @@ describe("task-registry", () => {
           status: "cancelled",
         }),
       });
+      expect(hoisted.abortReplyRunBySessionKeyMock).not.toHaveBeenCalled();
     });
   });
 });

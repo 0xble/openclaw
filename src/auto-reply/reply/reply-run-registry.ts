@@ -479,6 +479,10 @@ export function abortReplyRunBySessionId(sessionId: string): boolean {
   return true;
 }
 
+export function abortReplyRunBySessionKey(sessionKey: string): boolean {
+  return replyRunRegistry.abort(sessionKey);
+}
+
 export function waitForReplyRunEndBySessionId(
   sessionId: string,
   timeoutMs = 15_000,

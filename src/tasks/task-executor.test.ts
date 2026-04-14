@@ -40,7 +40,9 @@ const hoisted = vi.hoisted(() => {
   const sendMessageMock = vi.fn();
   const cancelSessionMock = vi.fn();
   const killSubagentRunAdminMock = vi.fn();
+  const abortReplyRunBySessionKeyMock = vi.fn();
   return {
+    abortReplyRunBySessionKeyMock,
     sendMessageMock,
     cancelSessionMock,
     killSubagentRunAdminMock,
@@ -71,6 +73,7 @@ async function withTaskExecutorStateDir(run: (stateDir: string) => Promise<void>
       sendMessage: hoisted.sendMessageMock,
     });
     setTaskRegistryControlRuntimeForTests({
+      abortReplyRunBySessionKey: hoisted.abortReplyRunBySessionKeyMock,
       getAcpSessionManager: () => ({
         cancelSession: hoisted.cancelSessionMock,
       }),
@@ -109,6 +112,7 @@ describe("task-executor", () => {
     hoisted.sendMessageMock.mockReset();
     hoisted.cancelSessionMock.mockReset();
     hoisted.killSubagentRunAdminMock.mockReset();
+    hoisted.abortReplyRunBySessionKeyMock.mockReset();
   });
 
   it("advances a queued run through start and completion", async () => {

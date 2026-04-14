@@ -20,7 +20,10 @@ export type KillSubagentRunAdmin = (params: {
   sessionKey: string;
 }) => Promise<KillSubagentRunAdminResult>;
 
+export type AbortReplyRunBySessionKey = (sessionKey: string) => boolean;
+
 export type TaskRegistryControlRuntime = {
+  abortReplyRunBySessionKey: AbortReplyRunBySessionKey;
   getAcpSessionManager: () => {
     cancelSession: CancelAcpSessionAdmin;
   };

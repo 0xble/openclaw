@@ -9,6 +9,7 @@ import {
 import { resetTaskFlowRegistryForTests } from "../../tasks/task-flow-runtime-internal.js";
 
 const runtimeTaskMocks = vi.hoisted(() => ({
+  abortReplyRunBySessionKeyMock: vi.fn(),
   sendMessageMock: vi.fn(),
   cancelSessionMock: vi.fn(),
   killSubagentRunAdminMock: vi.fn(),
@@ -23,6 +24,7 @@ export function installRuntimeTaskDeliveryMock(): void {
     sendMessage: runtimeTaskMocks.sendMessageMock,
   });
   setTaskRegistryControlRuntimeForTests({
+    abortReplyRunBySessionKey: runtimeTaskMocks.abortReplyRunBySessionKeyMock,
     getAcpSessionManager: () => ({
       cancelSession: runtimeTaskMocks.cancelSessionMock,
     }),
